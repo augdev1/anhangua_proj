@@ -2,6 +2,8 @@
 import requests
 from dotenv import load_dotenv
 import os
+import time
+from datetime import datetime
 
 load_dotenv()
 
@@ -306,20 +308,259 @@ def save_kml_polygons(alerts, output_path="alerts.kml", radius_m=30, points=72):
     print(f"KML salvo em: {output_path}")
 
 
-if __name__ == "__main__":
-    print("Buscando alertas de desmatamento na Amazônia (últimos 14 dias)...")
-    resultados = get_alerts_amazon(TOKEN, days=14)
-    
-    if resultados:
-        print(f"{len(resultados)} alertas encontrados. Exibindo os 5 primeiros:")
-        for alerta in resultados[:5]:
-            print(alerta)
+def parse_alert_date(val):
+    """Parseia uma string de data (ISO) e retorna objeto date.
 
+    Se não conseguir parsear, retorna None.
+    """
+    if not val:
+        return None
+    try:
+        # Tenta ISO (com ou sem tempo)
+        return datetime.fromisoformat(str(val)).date()
+    except Exception:
+        try:
+            # Fallback para formato simples YYYY-MM-DD
+            return datetime.strptime(str(val), "%Y-%m-%d").date()
+        except Exception:
+            return None
+
+
+def cluster_alerts(alerts, eps_km=1.0, min_samples=1):
+    """Agrupa alertas próximos geograficamente em áreas de desmatamento.
+
+    Usa DBSCAN com métrica haversine (distância em graus convertida para rad).
+    """
+    if not alerts:
+        return []
+
+    try:
+        import numpy as np
+        from sklearn.cluster import DBSCAN
+    except ImportError:
+        print("Erro: scikit-learn (e numpy) são necessários para clusterização. Instale com: pip install scikit-learn numpy")
+        return []
+
+    coords = []
+    for a in alerts:
+        lat = a.get("latitude")
+        lon = a.get("longitude")
+        if lat is None or lon is None:
+            continue
+        coords.append((lat, lon))
+
+    if not coords:
+        return []
+
+    coords_rad = np.radians(np.array(coords, dtype=float))
+    eps_rad = eps_km / 6371.0088  # raio médio da Terra em km
+
+    db = DBSCAN(eps=eps_rad, min_samples=min_samples, metric="haversine")
+    labels = db.fit_predict(coords_rad)
+
+    clusters = {}
+    for label, alert in zip(labels, alerts):
+        # Cada label representa um grupo; -1 são pontos isolados (ruído)
+        if label == -1:
+            label = f"noise_{len(clusters)}"
+        clusters.setdefault(label, []).append(alert)
+
+    clustered_alerts = []
+    for group in clusters.values():
+        lats = [a.get("latitude") for a in group if a.get("latitude") is not None]
+        lons = [a.get("longitude") for a in group if a.get("longitude") is not None]
+        if not lats or not lons:
+            continue
+
+        avg_lat = sum(lats) / len(lats)
+        avg_lon = sum(lons) / len(lons)
+
+        latest = None
+        for a in group:
+            d = parse_alert_date(a.get("alert_date"))
+            if d is None:
+                continue
+            if latest is None or d > latest:
+                latest = d
+
+        clustered_alerts.append({
+            "lat": avg_lat,
+            "lon": avg_lon,
+            "alert_count": len(group),
+            "latest_alert": latest.isoformat() if latest else None,
+        })
+
+    return clustered_alerts
+
+
+def save_clustered_csv(clusters, output_path="clustered_alerts.csv"):
+    """Salva clusters de alertas como CSV."""
+    import csv
+
+    if not clusters:
+        print("Nenhuma área agrupada para salvar em CSV.")
+        return
+
+    keys = ["lat", "lon", "alert_count", "latest_alert"]
+
+    with open(output_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=keys)
+        writer.writeheader()
+        for c in clusters:
+            writer.writerow({k: c.get(k, "") for k in keys})
+
+    print(f"CSV de clusters salvo em: {output_path}")
+
+
+def save_clustered_kml(clusters, output_path="clustered_alerts.kml"):
+    """Salva clusters como um KML com marcadores (Placemarks)."""
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
+        f.write("<kml xmlns=\"http://www.opengis.net/kml/2.2\">\n")
+        f.write("<Document>\n")
+
+        for i, c in enumerate(clusters, start=1):
+            lat = c.get("lat")
+            lon = c.get("lon")
+            if lat is None or lon is None:
+                continue
+
+            name = "Área possível de desmatamento"
+            desc = (
+                f"Alertas detectados: {c.get('alert_count', 0)}\n"
+                f"Último alerta: {c.get('latest_alert', '')}"
+            )
+
+            f.write("  <Placemark>\n")
+            f.write(f"    <name>{name}</name>\n")
+            f.write(f"    <description>{desc}</description>\n")
+            f.write("    <Point>\n")
+            f.write("      <coordinates>" + f"{lon},{lat},0" + "</coordinates>\n")
+            f.write("    </Point>\n")
+            f.write("  </Placemark>\n")
+
+        f.write("</Document>\n")
+        f.write("</kml>\n")
+
+    print(f"KML de clusters salvo em: {output_path}")
+
+
+def save_clustered_json(clusters, output_path="clustered_alerts.json"):
+    """Salva clusters como um JSON simples (lista de objetos)."""
+    if not clusters:
+        print("Nenhuma área agrupada para salvar em JSON.")
+        return
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(clusters, f, ensure_ascii=False, indent=2)
+
+    print(f"JSON de clusters salvo em: {output_path}")
+
+
+HISTORY_PATH = "alerts_history.json"
+CHECK_INTERVAL_SECONDS = 30 * 60  # 30 minutos
+
+
+def load_history(path=HISTORY_PATH):
+    """Lê o histórico de alertas já processados."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if isinstance(data, list):
+                return data
+    except FileNotFoundError:
+        return []
+    except Exception as e:
+        print(f"Erro ao ler histórico ({path}): {e}")
+    return []
+
+
+def save_history(history, path=HISTORY_PATH):
+    """Salva o histórico de alertas processados."""
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(history, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"Erro ao salvar histórico ({path}): {e}")
+
+
+def make_alert_key(alert):
+    """Cria uma chave única para um alerta (lat, lon, alert_date)."""
+    lat = alert.get("latitude")
+    lon = alert.get("longitude")
+    date = alert.get("alert_date")
+
+    # Normaliza valores (strings/float) para comparação consistente.
+    try:
+        lat = round(float(lat), 6)
+        lon = round(float(lon), 6)
+    except Exception:
+        lat = str(lat)
+        lon = str(lon)
+
+    return (lat, lon, str(date))
+
+
+def run_monitor(interval_seconds=CHECK_INTERVAL_SECONDS):
+    """Loop de monitoramento contínuo que busca novos alertas a cada intervalo."""
+    history = load_history()
+    seen = {make_alert_key(a) for a in history}
+
+    while True:
+        print("\nBuscando alertas de desmatamento na Amazônia (últimos 14 dias)...")
+        resultados = get_alerts_amazon(TOKEN, days=14)
+
+        if not resultados:
+            print("Nenhum alerta encontrado ou ocorreu um erro.")
+            time.sleep(interval_seconds)
+            continue
+
+        novos = []
+        for alerta in resultados:
+            if make_alert_key(alerta) not in seen:
+                novos.append(alerta)
+
+        # Exibe detalhes de cada novo alerta.
+        for alerta in novos:
+            print("\n⚠ NOVO ALERTA DETECTADO")
+            print(f"Latitude: {alerta.get('latitude')}")
+            print(f"Longitude: {alerta.get('longitude')}")
+            print(f"Data: {alerta.get('alert_date')}")
+            print(f"Confiança: {alerta.get('confidence')}")
+
+        # Atualiza histórico
+        for alerta in novos:
+            key = make_alert_key(alerta)
+            if key not in seen:
+                seen.add(key)
+                history.append({
+                    "latitude": alerta.get("latitude"),
+                    "longitude": alerta.get("longitude"),
+                    "alert_date": alerta.get("alert_date"),
+                })
+
+        if novos:
+            save_history(history)
+
+        # Gera saídas de arquivos (CSV/KML/clusterizados/JSON)
         save_csv(resultados, output_path="alerts.csv")
-        # Usamos um polígono com mais vértices para ficar mais redondo.
         save_kml_polygons(resultados, output_path="alerts.kml", radius_m=30, points=72)
 
-        print("\nPara ver no Google My Maps (ou outros mapas que aceitem CSV):\n 1) Abra https://www.google.com/mymaps\n 2) Crie um novo mapa\n 3) Clique em 'Importar' e selecione 'alerts.csv' gerado")
-        print("\nPara ver áreas aproximadas em KML (exibe pequenos polígonos ao redor de cada ponto):\n 1) Abra https://www.google.com/mymaps\n 2) Crie/abra um mapa\ 3) Clique em 'Importar' e selecione 'alerts.kml'")
-    else:
-        print("Nenhum alerta encontrado ou ocorreu um erro.")
+        clustered = cluster_alerts(resultados, eps_km=1.0)
+        print(f"\nResumo do monitoramento")
+        print(f"Alertas encontrados na API: {len(resultados)}")
+        print(f"Alertas novos detectados: {len(novos)}")
+        print(f"Alertas já conhecidos: {len(resultados) - len(novos)}")
+
+        save_clustered_csv(clustered, output_path="clustered_alerts.csv")
+        save_clustered_kml(clustered, output_path="clustered_alerts.kml")
+        save_clustered_json(clustered, output_path="clustered_alerts.json")
+
+        time.sleep(interval_seconds)
+
+
+if __name__ == "__main__":
+    try:
+        run_monitor()
+    except KeyboardInterrupt:
+        print("\nMonitoramento interrompido pelo usuário.")
