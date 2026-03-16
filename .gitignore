@@ -1,0 +1,19 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+venv/
+
+# Output data files
+alerts.csv
+alerts.kml
+alerts.geojson
+clustered_alerts.csv
+clustered_alerts.kml
+clustered_alerts.json
+alerts_history.json
+
+# Environment file
+.env
