@@ -1,0 +1,6 @@
+requests
+python-dotenv
+scikit-learn
+numpy
+fastapi
+uvicorn
