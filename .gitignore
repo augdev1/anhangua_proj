@@ -17,3 +17,6 @@ alerts_history.json
 
 # Environment file
 .env
+
+# Logs
+logs/

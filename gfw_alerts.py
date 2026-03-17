@@ -1,11 +1,41 @@
 ﻿import json
+import logging
 import requests
 from dotenv import load_dotenv
 import os
 import time
 from datetime import datetime
+from functools import wraps
 
 load_dotenv()
+
+
+def ttl_cache(ttl_seconds: float):
+    """Simple TTL cache decorator.
+
+    Keeps results in memory for `ttl_seconds`. This speeds up repeated calls
+    during a demo without changing return values.
+    """
+
+    def decorator(func):
+        cache = {}
+
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            key = (args, tuple(sorted(kwargs.items())))
+            now = time.time()
+            if key in cache:
+                value, expires_at = cache[key]
+                if now < expires_at:
+                    return value
+
+            value = func(*args, **kwargs)
+            cache[key] = (value, now + ttl_seconds)
+            return value
+
+        return wrapper
+
+    return decorator
 
 
 BASE_URL = "https://data-api.globalforestwatch.org"
@@ -14,7 +44,64 @@ VERSION = None  # use latest available version if None or "latest"
 # The API key can be set as GFW_API_TOKEN or API_TOKEN in the .env file.
 TOKEN = (os.getenv("GFW_API_TOKEN") or os.getenv("API_TOKEN") or "").strip()
 
+logger = logging.getLogger(__name__)
 
+
+def _normalize_coord(val):
+    try:
+        return round(float(val), 6)
+    except Exception:
+        return val
+
+
+def dedupe_alerts(alerts):
+    """Remove duplicate alerts using (lat, lon, alert_date)."""
+    seen = set()
+    unique = []
+    for a in alerts:
+        key = (
+            _normalize_coord(a.get("latitude")),
+            _normalize_coord(a.get("longitude")),
+            str(a.get("alert_date")),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(a)
+    return unique
+
+
+def filter_alerts_by_confidence(alerts, confidence):
+    """Return only alerts whose confidence matches the given value."""
+    if not confidence:
+        return alerts
+
+    conf = str(confidence).strip().lower()
+    if not conf:
+        return alerts
+
+    filtered = []
+    for a in alerts:
+        if str(a.get("confidence", "")).strip().lower() == conf:
+            filtered.append(a)
+    return filtered
+
+
+def filter_alerts_by_bbox(alerts, min_lon, min_lat, max_lon, max_lat):
+    """Return only alerts within the provided bounding box."""
+    out = []
+    for a in alerts:
+        try:
+            lon = float(a.get("longitude"))
+            lat = float(a.get("latitude"))
+        except Exception:
+            continue
+        if min_lon <= lon <= max_lon and min_lat <= lat <= max_lat:
+            out.append(a)
+    return out
+
+
+@ttl_cache(ttl_seconds=60 * 60)
 def resolve_dataset_version(dataset, version=None, token=None):
     """Resolve the latest available dataset version from the GFW API."""
     if version and version != "latest":
@@ -43,7 +130,8 @@ def get_headers(token):
     return headers
 
 
-def get_alerts_tile(lat, lng, z, token=TOKEN):
+@ttl_cache(ttl_seconds=60 * 5)
+def get_alerts_tile(lat, lng, z, token=TOKEN, confidence=None):
     """Fetch deforestation alerts for a given map tile (lat/lng/z).
 
     This is the standard parameters used by the GFW DATA API for /features.
@@ -60,7 +148,7 @@ def get_alerts_tile(lat, lng, z, token=TOKEN):
     try:
         response = requests.get(url, headers=get_headers(token), params=params)
         if not response.ok:
-            print(f"Erro HTTP ao buscar alertas ({response.status_code}): {response.text}")
+            logger.error("Erro HTTP ao buscar alertas (%s): %s", response.status_code, response.text)
             return []
 
         data = response.json()
@@ -83,13 +171,17 @@ def get_alerts_tile(lat, lng, z, token=TOKEN):
             }
             alerts.append(alert)
             
+        alerts = filter_alerts_by_confidence(alerts, confidence)
+        alerts = dedupe_alerts(alerts)
+        logger.info("get_alerts_tile: %d alerts returned (lat=%s lng=%s z=%s confidence=%s)", len(alerts), lat, lng, z, confidence)
         return alerts
 
     except requests.exceptions.RequestException as e:
-        print(f"Erro ao buscar alertas: {e}")
+        logger.error("Erro ao buscar alertas (tile): %s", e)
         return []
 
 
+@ttl_cache(ttl_seconds=60 * 60)
 def create_amazon_geostore(token=TOKEN):
     """Create (or retrieve) a Geostore representing the Amazon basin.
 
@@ -139,7 +231,8 @@ def create_amazon_geostore(token=TOKEN):
         return None
 
 
-def get_alerts_amazon(token=TOKEN, days=14):
+@ttl_cache(ttl_seconds=60 * 5)
+def get_alerts_amazon(token=TOKEN, days=14, confidence=None):
     """Fetch recent GLAD alerts limited to the Amazon basin.
 
     This uses the /query/json endpoint (requires API key) and filters the query
@@ -147,7 +240,7 @@ def get_alerts_amazon(token=TOKEN, days=14):
     """
 
     if not token:
-        print("Precisa definir GFW_API_TOKEN no .env para usar /query/json (API key).")
+        logger.error("GFW_API_TOKEN não definido: não é possível usar /query/json.")
         return []
 
     version = resolve_dataset_version(DATASET, VERSION, token)
@@ -182,7 +275,7 @@ def get_alerts_amazon(token=TOKEN, days=14):
     try:
         response = requests.get(url, headers=get_headers(token), params=params, timeout=60)
         if not response.ok:
-            print(f"Erro HTTP ao buscar alertas (query/json) ({response.status_code}): {response.text}")
+            logger.error("Erro HTTP ao buscar alertas (query/json) (%s): %s", response.status_code, response.text)
             return []
 
         data = response.json().get("data") or []
@@ -198,10 +291,13 @@ def get_alerts_amazon(token=TOKEN, days=14):
                 "source": "GLAD-Landsat",
             })
 
+        alerts = filter_alerts_by_confidence(alerts, confidence)
+        alerts = dedupe_alerts(alerts)
+        logger.info("get_alerts_amazon: %d alerts returned (days=%s confidence=%s)", len(alerts), days, confidence)
         return alerts
 
     except requests.exceptions.RequestException as e:
-        print(f"Erro ao buscar alertas (query/json): {e}")
+        logger.error("Erro ao buscar alertas (query/json): %s", e)
         return []
 
 
