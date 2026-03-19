@@ -75,6 +75,7 @@ class Cluster(BaseModel):
 
 
 @app.get("/alerts/tile", response_model=List[Alert])
+@app.get("/alertas/tile", response_model=List[Alert])
 def alerts_tile(
     lat: float = Query(..., description="Latitude of the tile"),
     lng: float = Query(..., description="Longitude of the tile"),
@@ -94,6 +95,7 @@ def alerts_tile(
 
 
 @app.get("/alerts/amazon", response_model=List[Alert])
+@app.get("/alertas/amazonas", response_model=List[Alert])
 def alerts_amazon(
     days: int = Query(14, ge=1, description="Últimos dias"),
     confidence: Optional[str] = Query(None, description="Filter by confidence (low/medium/high)"),
@@ -111,6 +113,7 @@ def alerts_amazon(
 
 
 @app.get("/alerts/amazon.geojson")
+@app.get("/alertas/amazonas.geojson")
 def alerts_amazon_geojson(
     days: int = Query(14, ge=1, description="Últimos dias"),
     confidence: Optional[str] = Query(None, description="Filter by confidence (low/medium/high)"),
@@ -147,6 +150,7 @@ def alerts_amazon_geojson(
 
 
 @app.get("/alerts/map")
+@app.get("/alertas/mapa")
 def alerts_map(
     days: int = Query(14, ge=1, description="Últimos dias"),
     confidence: Optional[str] = Query(None, description="Filter by confidence (low/medium/high)"),
@@ -175,6 +179,7 @@ def alerts_map(
 
 
 @app.get("/alerts/map/clusters")
+@app.get("/alertas/mapa/clusters")
 def alerts_map_clusters(
     days: int = Query(14, ge=1, description="Últimos dias"),
     confidence: Optional[str] = Query(None, description="Filter by confidence (low/medium/high)"),
@@ -211,6 +216,7 @@ def alerts_map_clusters(
 
 
 @app.get("/alerts/bbox", response_model=List[Alert])
+@app.get("/alertas/bbox", response_model=List[Alert])
 def alerts_bbox(
     bbox: str = Query(..., description="Bounding box: minLon,minLat,maxLon,maxLat"),
     days: int = Query(14, ge=1, description="Últimos dias"),
