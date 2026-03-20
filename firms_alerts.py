@@ -9,9 +9,12 @@ import os
 import requests
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
+from dotenv import load_dotenv
 
-FIRMS_API_BASE = "https://firms.modaps.eosdis.nasa.gov/api/"  # nova URL de exemplo
-FIRMS_API_TOKEN = os.getenv("FIRMS_API_TOKEN", "")
+load_dotenv()
+
+FIRMS_API_BASE = "https://firms.modaps.eosdis.nasa.gov/api/"
+FIRMS_API_TOKEN = os.getenv("FIRMS_API_TOKEN") or os.getenv("API_KEY") or os.getenv("API_TOKEN") or ""
 
 
 def _normalize_record(rec: Dict) -> Optional[Dict]:
