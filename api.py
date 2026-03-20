@@ -58,13 +58,13 @@ app = FastAPI(
 
 
 class Alert(BaseModel):
-    latitude: Optional[float]
-    longitude: Optional[float]
-    alert_date: Optional[str]
-    confidence: Optional[str]
-    source: Optional[str]
-    alert_type: Optional[str]
-    area_ha: Optional[float]
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    alert_date: Optional[str] = None
+    confidence: Optional[str] = None
+    source: Optional[str] = None
+    alert_type: Optional[str] = None
+    area_ha: Optional[float] = None
 
 
 class Cluster(BaseModel):
