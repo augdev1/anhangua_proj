@@ -7,7 +7,7 @@ endpoints to fetch alerts and clustered alerts as JSON.
 import logging
 import os
 
-from datetime import date
+from datetime import date, datetime
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
