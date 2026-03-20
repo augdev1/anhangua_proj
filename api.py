@@ -74,7 +74,6 @@ class Cluster(BaseModel):
     latest_alert: Optional[str]
 
 
-@app.get("/alerts/tile", response_model=List[Alert])
 @app.get("/alertas/tile", response_model=List[Alert])
 def alerts_tile(
     lat: float = Query(..., description="Latitude of the tile"),
@@ -94,7 +93,6 @@ def alerts_tile(
     return alerts
 
 
-@app.get("/alerts/amazon", response_model=List[Alert])
 @app.get("/alertas/amazonas", response_model=List[Alert])
 def alerts_amazon(
     days: int = Query(14, ge=1, description="Últimos dias"),
@@ -112,7 +110,6 @@ def alerts_amazon(
     return alerts
 
 
-@app.get("/alerts/amazon.geojson")
 @app.get("/alertas/amazonas.geojson")
 def alerts_amazon_geojson(
     days: int = Query(14, ge=1, description="Últimos dias"),
@@ -149,7 +146,6 @@ def alerts_amazon_geojson(
     return JSONResponse(content=geojson)
 
 
-@app.get("/alerts/map")
 @app.get("/alertas/mapa")
 def alerts_map(
     days: int = Query(14, ge=1, description="Últimos dias"),
@@ -178,7 +174,6 @@ def alerts_map(
     return JSONResponse(content=geojson)
 
 
-@app.get("/alerts/map/clusters")
 @app.get("/alertas/mapa/clusters")
 def alerts_map_clusters(
     days: int = Query(14, ge=1, description="Últimos dias"),
@@ -215,7 +210,6 @@ def alerts_map_clusters(
     return JSONResponse(content=response)
 
 
-@app.get("/alerts/bbox", response_model=List[Alert])
 @app.get("/alertas/bbox", response_model=List[Alert])
 def alerts_bbox(
     bbox: str = Query(..., description="Bounding box: minLon,minLat,maxLon,maxLat"),
@@ -244,7 +238,7 @@ def alerts_bbox(
     return filtered
 
 
-@app.get("/alerts/amazon/clustered", response_model=List[Cluster])
+@app.get("/alertas/amazonas/clusterizado", response_model=List[Cluster])
 def alerts_amazon_clustered(
     days: int = Query(14, ge=1, description="Últimos dias"),
     confidence: Optional[str] = Query(None, description="Filter by confidence (low/medium/high)"),
