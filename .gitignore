@@ -20,3 +20,7 @@ alerts_history.json
 
 # Logs
 logs/
+
+# Frontend build artifacts and lockfile
+frontend_new/
+package-lock.json

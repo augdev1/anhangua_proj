@@ -232,7 +232,7 @@ def create_amazon_geostore(token=TOKEN):
 
 
 @ttl_cache(ttl_seconds=60 * 5)
-def get_alerts_amazon(token=TOKEN, days=14, confidence=None):
+def get_alerts_amazon(token=TOKEN, days=14, confidence=None, limit=1000):
     """Fetch recent GLAD alerts limited to the Amazon basin.
 
     This uses the /query/json endpoint (requires API key) and filters the query
@@ -260,7 +260,7 @@ def get_alerts_amazon(token=TOKEN, days=14, confidence=None):
         "umd_glad_landsat_alerts__confidence AS confidence "
         "FROM data "
         f"WHERE umd_glad_landsat_alerts__date >= '{since}' "
-        "LIMIT 500"
+        f"LIMIT {min(max(limit, 100), 10000)}"
     )
 
     geostore_id = create_amazon_geostore(token)

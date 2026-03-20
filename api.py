@@ -9,6 +9,7 @@ import os
 
 from datetime import date, datetime
 from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Any, Dict, List, Optional
@@ -16,6 +17,7 @@ from typing import Any, Dict, List, Optional
 import alerts_service
 import firms_alerts
 import gfw_alerts
+import landsat_service
 
 # Setup basic logging to file (and console via uvicorn if running)
 LOG_DIR = "logs"
@@ -54,12 +56,16 @@ def _parse_date(value: Optional[str]) -> Optional[date]:
 # Simple in-memory rate-limiting by client IP + endpoint
 _rate_limits = {}
 RATE_LIMIT_WINDOW = 60  # seconds
-RATE_LIMIT_MAX = 20
+RATE_LIMIT_MAX = 120  # allow more requests from same client when testing/dev
 
 
 def _check_rate_limit(request: Request, endpoint: str):
     now = int(datetime.now().timestamp())
     client_ip = request.client.host if request.client else "unknown"
+    # For local development, avoid strict throttling
+    if client_ip in ("127.0.0.1", "::1", "localhost"):
+        return True
+
     key = f"{client_ip}:{endpoint}"
 
     entry = _rate_limits.get(key, {"count": 0, "first_at": now})
@@ -79,6 +85,15 @@ app = FastAPI(
     title="Anhangua GFW Alerts API",
     description="Serves deforestation alert data fetched from Global Forest Watch.",
     version="0.1.0",
+)
+
+# Allow frontend dev server to call the API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"] if os.getenv("ALLOW_ALL_CORS", "true").lower() == "true" else ["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -135,6 +150,83 @@ def alerts_amazon(
     return alerts
 
 
+@app.get("/alertas/landsat")
+def alerts_landsat(
+    bbox: str = Query("-60.0,-3.0,-59.0,-2.0"),
+    date_str: Optional[str] = Query(None),
+    days: int = Query(14, ge=1),
+    limit: int = Query(500, ge=1, le=2000),
+):
+    logger.info("GET /alertas/landsat bbox=%s date=%s days=%s limit=%s",
+                bbox, date_str, days, limit)
+
+    start_date = None
+    end_date = None
+
+    if date_str:
+        try:
+            start_date = date.fromisoformat(date_str)
+            end_date = start_date
+        except Exception:
+            raise HTTPException(status_code=400, detail="date_str must be YYYY-MM-DD")
+
+    alerts = landsat_service.get_landsat_alerts_amazon(
+        days=days,
+        confidence=None,
+        start_date=start_date,
+        end_date=end_date
+    )
+
+    if alerts is None:
+        raise HTTPException(status_code=502, detail="Erro ao consultar Landsat")
+
+    # 🔥 FILTRO BBOX
+    try:
+        parts = [float(p) for p in bbox.split(",")]
+        if len(parts) == 4:
+            min_lon, min_lat, max_lon, max_lat = parts
+            alerts = [
+                a for a in alerts
+                if a.get("longitude") is not None
+                and a.get("latitude") is not None
+                and min_lon <= float(a["longitude"]) <= max_lon
+                and min_lat <= float(a["latitude"]) <= max_lat
+            ]
+    except Exception:
+        raise HTTPException(status_code=400, detail="bbox inválido")
+
+    # 🔥 CONVERTE PRA GEOJSON
+    features = []
+
+    for a in alerts[:limit]:
+        lat = a.get("latitude")
+        lon = a.get("longitude")
+
+        if lat is None or lon is None:
+            continue
+
+        features.append({
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [lon, lat]
+            },
+            "properties": {
+                "date": a.get("image_date"),
+                "resolution": a.get("resolution"),
+                "source": "landsat"
+            }
+        })
+
+    geojson = {
+        "type": "FeatureCollection",
+        "features": features
+    }
+
+    logger.info("/alertas/landsat returned %d features", len(features))
+
+    return JSONResponse(content=geojson)
+
 @app.get("/alertas/amazonas.geojson")
 def alerts_amazon_geojson(
     days: int = Query(14, ge=1, description="Últimos dias"),
@@ -178,6 +270,7 @@ def alerts_map(
     confidence: Optional[str] = Query(None, description="Filter by confidence (low/medium/high)"),
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    limit: int = Query(1000, ge=1, le=10000, description="Max number of alerts to return"),
 ):
     """Return alerts ready to be rendered on a map (GeoJSON-like format)."""
     if not _check_rate_limit(request, "/alertas/mapa"):
@@ -195,7 +288,7 @@ def alerts_map(
     ed = _parse_date(end_date)
 
     alerts = alerts_service.get_map_alerts(
-        days=days, confidence=confidence, start_date=sd, end_date=ed
+        days=days, confidence=confidence, start_date=sd, end_date=ed, limit=limit
     )
 
     geojson = alerts_service.alerts_to_geojson(alerts)
@@ -206,31 +299,24 @@ def alerts_map(
 @app.get("/alertas/firms")
 def alerts_firms(
     request: Request,
-    days: int = Query(1, ge=1, le=30, description="Últimos dias"),
-    min_confidence: Optional[float] = Query(None, ge=0, le=100, description="Confiança mínima"),
-    limit: int = Query(500, ge=1, le=2000, description="Máximo de alertas"),
+    days: int = Query(1, ge=1, le=30),
+    min_confidence: Optional[float] = Query(None, ge=0, le=100),
+    limit: int = Query(500, ge=1, le=2000),
 ):
-    """Fetch NASA FIRMS fire alerts and return a standardized payload."""
     if not _check_rate_limit(request, "/alertas/firms"):
         raise HTTPException(status_code=429, detail="Rate limit exceeded")
 
-    logger.info(
-        "GET /alertas/firms days=%s min_confidence=%s limit=%s",
-        days,
-        min_confidence,
-        limit,
+    logger.info("GET /alertas/firms days=%s min_confidence=%s limit=%s",
+                days, min_confidence, limit)
+
+    geojson = firms_alerts.fetch_firms_alerts(
+        days=days,
+        min_confidence=min_confidence,
+        limit=limit
     )
 
-    geojson = firms_alerts.fetch_firms_alerts(days=days, min_confidence=min_confidence, limit=limit)
-
-    payload = {
-        "status": "ok",
-        "count": len(geojson.get("features", [])),
-        "data": geojson,
-    }
-
-    logger.info("/alertas/firms returned %d features", payload["count"])
-    return JSONResponse(status_code=200, content=payload)
+    # 🔥 RETORNA DIRETO GEOJSON (PADRÃO)
+    return JSONResponse(content=geojson)
 
 
 @app.get("/alertas/mapa/clusters")

@@ -96,8 +96,6 @@ def fetch_firms_alerts(
         if isinstance(data, list):
             normalized = [_normalize_record(r) for r in data]
             normalized = [r for r in normalized if r is not None]
-            if min_confidence is not None:
-                normalized = [r for r in normalized if float(r.get("confidence", 0)) >= min_confidence]
 
             if len(normalized) > limit:
                 normalized = normalized[:limit]
@@ -110,3 +108,30 @@ def fetch_firms_alerts(
 
     # fallback para quando falhar
     return {"type": "FeatureCollection", "features": []}
+
+
+def fetch_firms_alerts_as_dict(
+    days: int = 1,
+    limit: int = 500,
+) -> List[Dict]:
+    """Fetch and normalize FIRMS alerts, then return a list of dicts."""
+    geojson = fetch_firms_alerts(days=days, limit=limit)
+    
+    features = geojson.get("features", [])
+    
+    alerts_list = []
+    for feature in features:
+        properties = feature.get("properties", {})
+        geometry = feature.get("geometry", {})
+        coordinates = geometry.get("coordinates", [None, None])
+        
+        alerts_list.append({
+            "latitude": coordinates[1],
+            "longitude": coordinates[0],
+            "alert_date": properties.get("date"),
+            "confidence": properties.get("confidence"),
+            "source": "firms",
+        })
+        
+    return alerts_list
+

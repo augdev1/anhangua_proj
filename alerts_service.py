@@ -7,7 +7,9 @@ FastAPI routing, ensuring the frontend can consume only ready-to-render data.
 from datetime import date
 from typing import Any, Dict, Iterable, List, Optional
 
+import firms_alerts
 import gfw_alerts
+import landsat_service
 
 
 CONFIDENCE_MAP = {
@@ -113,6 +115,7 @@ def get_map_alerts(
     confidence: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    limit: int = 1000,
 ) -> List[Dict[str, Any]]:
     """Return alerts ready to be rendered on a map.
 
@@ -124,9 +127,26 @@ def get_map_alerts(
     - keeps only the fields needed for frontend rendering
     """
 
-    alerts = gfw_alerts.get_alerts_amazon(gfw_alerts.TOKEN, days=days, confidence=confidence)
+    alerts = gfw_alerts.get_alerts_amazon(gfw_alerts.TOKEN, days=days, confidence=confidence, limit=limit)
     if not alerts:
-        return []
+        alerts = []
+    print(f"GFW alerts: {len(alerts)}")
+    if alerts:
+        print(f"First GFW alert: {alerts[0]}")
+
+    # Adiciona os alertas do FIRMS
+    firms_map_alerts = firms_alerts.fetch_firms_alerts_as_dict(days=days, limit=limit)
+    print(f"FIRMS alerts: {len(firms_map_alerts)}")
+    if firms_map_alerts:
+        print(f"First FIRMS alert: {firms_map_alerts[0]}")
+        alerts.extend(firms_map_alerts)
+
+    # Adiciona os alertas do LANDSAT
+    landsat_map_alerts = landsat_service.get_landsat_alerts_amazon(days=days, confidence=confidence, start_date=start_date, end_date=end_date)
+    print(f"LANDSAT alerts: {len(landsat_map_alerts)}")
+    if landsat_map_alerts:
+        print(f"First LANDSAT alert: {landsat_map_alerts[0]}")
+        alerts.extend(landsat_map_alerts)
 
     alerts = _filter_by_date_range(alerts, start_date=start_date, end_date=end_date)
     return [_normalize_alert(a) for a in alerts]
