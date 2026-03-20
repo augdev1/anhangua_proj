@@ -8,12 +8,13 @@ import logging
 import os
 
 from datetime import date
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Any, Dict, List, Optional
 
 import alerts_service
+import firms_alerts
 import gfw_alerts
 
 # Setup basic logging to file (and console via uvicorn if running)
@@ -49,6 +50,30 @@ def _parse_date(value: Optional[str]) -> Optional[date]:
         return date.fromisoformat(value)
     except Exception:
         return None
+
+# Simple in-memory rate-limiting by client IP + endpoint
+_rate_limits = {}
+RATE_LIMIT_WINDOW = 60  # seconds
+RATE_LIMIT_MAX = 20
+
+
+def _check_rate_limit(request: Request, endpoint: str):
+    now = int(datetime.now().timestamp())
+    client_ip = request.client.host if request.client else "unknown"
+    key = f"{client_ip}:{endpoint}"
+
+    entry = _rate_limits.get(key, {"count": 0, "first_at": now})
+    if now - entry["first_at"] >= RATE_LIMIT_WINDOW:
+        entry = {"count": 1, "first_at": now}
+    else:
+        entry["count"] += 1
+
+    _rate_limits[key] = entry
+
+    if entry["count"] > RATE_LIMIT_MAX:
+        return False
+    return True
+
 
 app = FastAPI(
     title="Anhangua GFW Alerts API",
@@ -148,14 +173,18 @@ def alerts_amazon_geojson(
 
 @app.get("/alertas/mapa")
 def alerts_map(
+    request: Request,
     days: int = Query(14, ge=1, description="Últimos dias"),
     confidence: Optional[str] = Query(None, description="Filter by confidence (low/medium/high)"),
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
 ):
     """Return alerts ready to be rendered on a map (GeoJSON-like format)."""
+    if not _check_rate_limit(request, "/alertas/mapa"):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+
     logger.info(
-        "GET /alerts/map days=%s confidence=%s start_date=%s end_date=%s",
+        "GET /alertas/mapa days=%s confidence=%s start_date=%s end_date=%s",
         days,
         confidence,
         start_date,
@@ -170,8 +199,38 @@ def alerts_map(
     )
 
     geojson = alerts_service.alerts_to_geojson(alerts)
-    logger.info("/alerts/map returned %d features", len(geojson.get("features", [])))
-    return JSONResponse(content=geojson)
+    logger.info("/alertas/mapa returned %d features", len(geojson.get("features", [])))
+    return JSONResponse(content=_standard_response(geojson))
+
+
+@app.get("/alertas/firms")
+def alerts_firms(
+    request: Request,
+    days: int = Query(1, ge=1, le=30, description="Últimos dias"),
+    min_confidence: Optional[float] = Query(None, ge=0, le=100, description="Confiança mínima"),
+    limit: int = Query(500, ge=1, le=2000, description="Máximo de alertas"),
+):
+    """Fetch NASA FIRMS fire alerts and return a standardized payload."""
+    if not _check_rate_limit(request, "/alertas/firms"):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+
+    logger.info(
+        "GET /alertas/firms days=%s min_confidence=%s limit=%s",
+        days,
+        min_confidence,
+        limit,
+    )
+
+    geojson = firms_alerts.fetch_firms_alerts(days=days, min_confidence=min_confidence, limit=limit)
+
+    payload = {
+        "status": "ok",
+        "count": len(geojson.get("features", [])),
+        "data": geojson,
+    }
+
+    logger.info("/alertas/firms returned %d features", payload["count"])
+    return JSONResponse(status_code=200, content=payload)
 
 
 @app.get("/alertas/mapa/clusters")
