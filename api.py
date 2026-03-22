@@ -296,6 +296,30 @@ def alerts_map(
     return JSONResponse(content=_standard_response(geojson))
 
 
+@app.get("/alertas/unificado")
+def alerts_unified(
+    request: Request,
+    days: int = Query(14, ge=1, description="Últimos dias"),
+    confidence: Optional[str] = Query(None, description="Filter by confidence (low/medium/high)"),
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    limit: int = Query(1000, ge=1, le=10000, description="Max number of alerts to return"),
+):
+    """Retorna lista unificada de alertas (GFW, FIRMS, Landsat) sem formato GeoJSON."""
+    if not _check_rate_limit(request, "/alertas/unificado"):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+
+    logger.info("GET /alertas/unificado days=%s confidence=%s", days, confidence)
+
+    sd = _parse_date(start_date)
+    ed = _parse_date(end_date)
+
+    alerts = alerts_service.get_map_alerts(
+        days=days, confidence=confidence, start_date=sd, end_date=ed, limit=limit
+    )
+    return JSONResponse(content=_standard_response(alerts))
+
+
 @app.get("/alertas/firms")
 def alerts_firms(
     request: Request,
