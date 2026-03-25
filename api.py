@@ -6,6 +6,8 @@ endpoints to fetch alerts and clustered alerts as JSON.
 
 import logging
 import os
+import json
+import time
 
 from datetime import date, datetime
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -309,14 +311,78 @@ def alerts_unified(
     if not _check_rate_limit(request, "/alertas/unificado"):
         raise HTTPException(status_code=429, detail="Rate limit exceeded")
 
-    logger.info("GET /alertas/unificado days=%s confidence=%s", days, confidence)
+    started = time.perf_counter()
+    client_ip = request.client.host if request.client else "unknown"
+    logger.info(
+        "UNIFIED_REQUEST %s",
+        json.dumps(
+            {
+                "endpoint": "/alertas/unificado",
+                "client_ip": client_ip,
+                "days": days,
+                "confidence": confidence,
+                "start_date": start_date,
+                "end_date": end_date,
+                "limit": limit,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        ),
+    )
 
     sd = _parse_date(start_date)
     ed = _parse_date(end_date)
 
-    alerts = alerts_service.get_map_alerts(
+    result = alerts_service.get_map_alerts_with_stats(
         days=days, confidence=confidence, start_date=sd, end_date=ed, limit=limit
     )
+    alerts = result.get("alerts", [])
+
+    elapsed_ms = round((time.perf_counter() - started) * 1000.0, 2)
+    logger.info(
+        "UNIFIED_SUMMARY %s",
+        json.dumps(
+            {
+                "endpoint": "/alertas/unificado",
+                "client_ip": client_ip,
+                "days": days,
+                "confidence": confidence,
+                "start_date": start_date,
+                "end_date": end_date,
+                "limit": limit,
+                "status": "ok",
+                "count_total": len(alerts),
+                "source_counts_raw": result.get("source_counts_raw", {}),
+                "source_counts_final": result.get("source_counts_final", {}),
+                "confidence_counts": result.get("confidence_counts", {}),
+                "source_errors": result.get("source_errors", {}),
+                "latency_ms": elapsed_ms,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        ),
+    )
+
+    # Snapshot dos dados para consumo offline via export de logs (feira/demo).
+    logger.info(
+        "UNIFIED_DATA %s",
+        json.dumps(
+            {
+                "endpoint": "/alertas/unificado",
+                "client_ip": client_ip,
+                "days": days,
+                "confidence": confidence,
+                "start_date": start_date,
+                "end_date": end_date,
+                "limit": limit,
+                "count_total": len(alerts),
+                "alerts": alerts,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        ),
+    )
+
     return JSONResponse(content=_standard_response(alerts))
 
 

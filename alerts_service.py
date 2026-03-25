@@ -6,10 +6,14 @@ FastAPI routing, ensuring the frontend can consume only ready-to-render data.
 
 from datetime import date
 from typing import Any, Dict, Iterable, List, Optional
+import logging
 
 import firms_alerts
 import gfw_alerts
 import landsat_service
+
+
+logger = logging.getLogger(__name__)
 
 
 CONFIDENCE_MAP = {
@@ -127,29 +131,110 @@ def get_map_alerts(
     - keeps only the fields needed for frontend rendering
     """
 
-    alerts = gfw_alerts.get_alerts_amazon(gfw_alerts.TOKEN, days=days, confidence=confidence, limit=limit)
-    if not alerts:
-        alerts = []
-    print(f"GFW alerts: {len(alerts)}")
-    if alerts:
-        print(f"First GFW alert: {alerts[0]}")
+    result = get_map_alerts_with_stats(
+        days=days,
+        confidence=confidence,
+        start_date=start_date,
+        end_date=end_date,
+        limit=limit,
+    )
+    return result["alerts"]
 
-    # Adiciona os alertas do FIRMS
-    firms_map_alerts = firms_alerts.fetch_firms_alerts_as_dict(days=days, limit=limit)
-    print(f"FIRMS alerts: {len(firms_map_alerts)}")
-    if firms_map_alerts:
-        print(f"First FIRMS alert: {firms_map_alerts[0]}")
-        alerts.extend(firms_map_alerts)
 
-    # Adiciona os alertas do LANDSAT
-    landsat_map_alerts = landsat_service.get_landsat_alerts_amazon(days=days, confidence=confidence, start_date=start_date, end_date=end_date)
-    print(f"LANDSAT alerts: {len(landsat_map_alerts)}")
-    if landsat_map_alerts:
-        print(f"First LANDSAT alert: {landsat_map_alerts[0]}")
-        alerts.extend(landsat_map_alerts)
+def get_map_alerts_with_stats(
+    days: int = 14,
+    confidence: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    limit: int = 1000,
+) -> Dict[str, Any]:
+    """Return normalized alerts plus metadata for logging/observability."""
+    combined_alerts: List[Dict[str, Any]] = []
+    source_counts_raw: Dict[str, int] = {"gfw": 0, "firms": 0, "landsat": 0}
+    source_errors: Dict[str, str] = {}
 
-    alerts = _filter_by_date_range(alerts, start_date=start_date, end_date=end_date)
-    return [_normalize_alert(a) for a in alerts]
+    try:
+        gfw_items_raw = gfw_alerts.get_alerts_amazon(
+            gfw_alerts.TOKEN,
+            days=days,
+            confidence=confidence,
+            limit=limit,
+        ) or []
+        gfw_items: List[Dict[str, Any]] = []
+        for item in gfw_items_raw:
+            alert = dict(item)
+            alert["source"] = "desmatamento-gfw"
+            gfw_items.append(alert)
+        source_counts_raw["gfw"] = len(gfw_items)
+        combined_alerts.extend(gfw_items)
+    except Exception as exc:
+        source_errors["gfw"] = str(exc)
+        logger.exception("Erro ao buscar alertas GFW")
+
+    try:
+        firms_items_raw = firms_alerts.fetch_firms_alerts_as_dict(days=days, limit=limit) or []
+        firms_items: List[Dict[str, Any]] = []
+        for item in firms_items_raw:
+            alert = dict(item)
+            alert["source"] = "queimadas-firms"
+            firms_items.append(alert)
+        source_counts_raw["firms"] = len(firms_items)
+        combined_alerts.extend(firms_items)
+    except Exception as exc:
+        source_errors["firms"] = str(exc)
+        logger.exception("Erro ao buscar alertas FIRMS")
+
+    try:
+        landsat_items_raw = landsat_service.get_landsat_alerts_amazon(
+            days=days,
+            confidence=confidence,
+            start_date=start_date,
+            end_date=end_date,
+        ) or []
+        landsat_items: List[Dict[str, Any]] = []
+        for item in landsat_items_raw:
+            alert = dict(item)
+            alert["source"] = "landsat"
+            landsat_items.append(alert)
+        source_counts_raw["landsat"] = len(landsat_items)
+        combined_alerts.extend(landsat_items)
+    except Exception as exc:
+        source_errors["landsat"] = str(exc)
+        logger.exception("Erro ao buscar alertas LANDSAT")
+
+    filtered_alerts = _filter_by_date_range(
+        combined_alerts,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    normalized_alerts = [_normalize_alert(a) for a in filtered_alerts]
+
+    source_counts_final: Dict[str, int] = {"gfw": 0, "firms": 0, "landsat": 0, "unknown": 0}
+    confidence_counts: Dict[str, int] = {}
+    for item in normalized_alerts:
+        src = str(item.get("source") or "").strip().lower()
+        if "firms" in src or "queimadas" in src:
+            source_key = "firms"
+        elif "gfw" in src or "desmatamento" in src or "glad" in src:
+            source_key = "gfw"
+        elif "landsat" in src:
+            source_key = "landsat"
+        else:
+            source_key = "unknown"
+        source_counts_final[source_key] = source_counts_final.get(source_key, 0) + 1
+
+        conf = str(item.get("confidence") or "unknown").strip().lower()
+        if not conf:
+            conf = "unknown"
+        confidence_counts[conf] = confidence_counts.get(conf, 0) + 1
+
+    return {
+        "alerts": normalized_alerts,
+        "source_counts_raw": source_counts_raw,
+        "source_counts_final": source_counts_final,
+        "confidence_counts": confidence_counts,
+        "source_errors": source_errors,
+    }
 
 
 def get_map_clusters(
