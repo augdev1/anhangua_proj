@@ -98,6 +98,10 @@
   </script>
 
   <style>
+    html {
+      font-size: clamp(14px, 0.25vw + 12px, 16px);
+    }
+
     .material-symbols-outlined {
       font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
     }
@@ -167,7 +171,7 @@
     .floating-hamburger {
       position: fixed;
       left: 10px;
-      top: 84px;
+      top: clamp(72px, 9vh, 92px);
       z-index: 60;
       height: 44px;
       width: 44px;
@@ -183,10 +187,37 @@
     .floating-hamburger.is-visible {
       display: inline-flex;
     }
+
+    #mapLayersMode {
+      color: #c1c8c4;
+      background-color: rgba(0, 0, 0, 0.25);
+    }
+
+    #mapLayersMode option {
+      background: #002118;
+      color: #c5ebdb;
+    }
+
+    @media (max-height: 820px) {
+      #alertDetailPanel {
+        height: 70dvh;
+      }
+    }
+
+    @media (max-height: 700px) {
+      #alertDetailPanel {
+        height: 64dvh;
+      }
+
+      .map-legend {
+        font-size: 10px;
+        line-height: 1.2;
+      }
+    }
   </style>
 </head>
 
-<body class="min-h-screen overflow-hidden bg-surface font-body text-on-surface selection:bg-tertiary/30 selection:text-tertiary">
+<body class="min-h-screen overflow-x-hidden overflow-y-auto bg-surface font-body text-on-surface selection:bg-tertiary/30 selection:text-tertiary">
   <!-- HEADER -->
   <header class="fixed top-0 z-50 flex h-16 w-full items-center justify-between bg-[#001710]/80 px-4 sm:px-6 backdrop-blur-xl shadow-top">
     <div class="flex min-w-0 items-center gap-3">
@@ -219,17 +250,20 @@
     </div>
 
     <!-- INDICADOR DE ALERTA -->
-    <div id="mapPinContainer" class="absolute left-[55%] top-[40%] z-10">
+    <div id="mapPinContainer" class="hidden absolute left-[55%] top-[40%] z-10">
       <div class="relative flex items-center justify-center">
         <div class="absolute h-10 w-10 animate-ping rounded-full bg-tertiary/20 sm:h-12 sm:w-12"></div>
         <div class="h-4 w-4 rounded-full border-2 border-surface bg-tertiary shadow-alert"></div>
       </div>
     </div>
 
-    <div class="absolute top-20 right-4 z-20 rounded-xl bg-[#001710]/70 backdrop-blur-md border border-[#98d3b7]/20 px-3 py-2 text-[11px] text-on-surface-variant space-y-1">
-      <div class="flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-[#ff6b3d]"></span> Queimadas (FIRMS)</div>
-      <div class="flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-[#98d3b7]"></span> Alertas GFW</div>
-      <div class="flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-[#4da3ff]"></span> Pontos Landsat</div>
+    <div class="map-legend absolute top-20 right-4 z-20 rounded-xl bg-[#001710]/70 backdrop-blur-md border border-[#98d3b7]/20 px-3 py-2 text-[11px] text-on-surface-variant space-y-1">
+      <div class="flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-[#ef4444]"></span> Queimadas</div>
+      <div class="flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-[#b45309]"></span> Desmatamento</div>
+      <div class="flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-[#a78bfa]"></span> Agrupamento de alertas</div>
+      <div class="flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-[#22c55e]"></span> Vegetação</div>
+      <div class="flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-[#3b82f6]"></span> Água</div>
+      <div class="flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-[#6b4f35]"></span> Solo exposto</div>
       <button id="btnRefreshLayers" class="mt-2 w-full rounded-lg bg-[#183b30]/80 px-2 py-1.5 text-[11px] font-semibold text-primary hover:opacity-90 active:scale-95">
         Atualizar Camadas
       </button>
@@ -262,14 +296,10 @@
             <span class="bar"></span>
             <span class="bar"></span>
           </button>
-
-          <button id="btnCloseDetail" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-container-high transition-colors hover:bg-surface-container-highest">
-            <span class="material-symbols-outlined text-on-surface-variant">close</span>
-          </button>
         </div>
       </div>
 
-      <div class="custom-scrollbar flex-1 overflow-y-auto px-4 pb-6 sm:px-6 sm:pb-6 md:pb-4">
+      <div class="custom-scrollbar flex-1 overflow-y-auto px-4 pb-2 sm:px-6 sm:pb-2 md:pb-2">
         <div class="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div class="rounded-[1.25rem] border border-tertiary/10 bg-surface-container-low p-4 sm:rounded-[1.5rem]">
             <span class="mb-2 block font-label text-[10px] uppercase tracking-widest text-on-surface-variant">
@@ -278,7 +308,7 @@
 
             <div class="inline-flex items-center gap-2 rounded-full bg-tertiary-container px-3 py-1">
               <span class="h-2 w-2 animate-pulse rounded-full bg-tertiary"></span>
-              <span id="alertStatusLabel" class="font-label text-xs font-bold uppercase tracking-wider text-tertiary">
+              <span id="alertStatusLabel" class="font-headline text-xl font-black text-tertiary sm:text-2xl">
                 0
               </span>
             </div>
@@ -298,7 +328,7 @@
           </div>
         </div>
 
-        <div class="mt-6 space-y-4">
+        <div class="mt-4 space-y-3">
           <div class="flex items-center justify-between rounded-[1.25rem] bg-surface-container-high/40 p-4 sm:rounded-[1.5rem] sm:p-5">
             <div class="flex min-w-0 items-center gap-3 sm:gap-4">
               <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-container-highest">
@@ -326,7 +356,7 @@
                 <p class="font-label text-[10px] uppercase tracking-widest text-on-surface-variant">
                   Fonte
                 </p>
-                <p id="alertSource" class="truncate text-sm font-medium text-on-surface sm:text-base">Sentinel-2 Satellite</p>
+                <p id="alertSource" class="truncate text-sm font-medium text-on-surface sm:text-base">Monitoramento por satélite</p>
               </div>
             </div>
           </div>
@@ -347,15 +377,15 @@
               </div>
             </div>
 
-            <div class="mt-4 rounded-[1rem] border border-[#98d3b7]/15 bg-[#001710]/45 p-4 space-y-4">
+            <div class="mt-3 rounded-[0.9rem] border border-[#98d3b7]/15 bg-[#001710]/45 p-3 space-y-3">
               <p class="font-label text-[10px] uppercase tracking-widest text-on-surface-variant">Filtros do Mapa</p>
 
               <div>
                 <p class="mb-2 font-label text-[10px] uppercase tracking-widest text-on-surface-variant">Período</p>
                 <div class="grid grid-cols-3 gap-2">
-                  <button type="button" data-days="1" class="map-period-btn rounded-lg border border-[#98d3b7]/20 px-2 py-2 text-xs font-semibold text-on-surface-variant">24h</button>
-                  <button type="button" data-days="7" class="map-period-btn rounded-lg border border-[#98d3b7]/20 px-2 py-2 text-xs font-semibold text-on-surface-variant">7 dias</button>
-                  <button type="button" data-days="30" class="map-period-btn rounded-lg border border-[#98d3b7]/20 px-2 py-2 text-xs font-semibold text-on-surface-variant">30 dias</button>
+                  <button type="button" data-days="1" class="map-period-btn rounded-lg border border-[#98d3b7]/20 px-2 py-1.5 text-[11px] font-semibold text-on-surface-variant">24h</button>
+                  <button type="button" data-days="7" class="map-period-btn rounded-lg border border-[#98d3b7]/20 px-2 py-1.5 text-[11px] font-semibold text-on-surface-variant">7 dias</button>
+                  <button type="button" data-days="30" class="map-period-btn rounded-lg border border-[#98d3b7]/20 px-2 py-1.5 text-[11px] font-semibold text-on-surface-variant">30 dias</button>
                 </div>
               </div>
 
@@ -368,31 +398,26 @@
               </div>
 
               <div class="grid grid-cols-2 gap-2">
-                <input id="mapStartDate" type="date" class="rounded-lg border border-[#98d3b7]/15 bg-black/20 px-2 py-2 text-xs text-on-surface" />
-                <input id="mapEndDate" type="date" class="rounded-lg border border-[#98d3b7]/15 bg-black/20 px-2 py-2 text-xs text-on-surface" />
+                <input id="mapStartDate" type="date" class="rounded-lg border border-[#98d3b7]/15 bg-black/20 px-2 py-1.5 text-xs text-on-surface" />
+                <input id="mapEndDate" type="date" class="rounded-lg border border-[#98d3b7]/15 bg-black/20 px-2 py-1.5 text-xs text-on-surface" />
               </div>
 
               <div>
                 <label for="mapLayersMode" class="mb-2 block font-label text-[10px] uppercase tracking-widest text-on-surface-variant">Camadas</label>
-                <select id="mapLayersMode" class="w-full rounded-lg border border-[#98d3b7]/15 bg-black/20 px-2 py-2 text-xs text-on-surface">
+                <select id="mapLayersMode" class="w-full rounded-lg border border-[#98d3b7]/15 bg-black/20 px-2 py-1.5 text-xs text-on-surface-variant">
                   <option value="alerts">Alertas</option>
-                  <option value="clusters">Clusters</option>
+                  <option value="clusters">Agrupamento de alertas</option>
                 </select>
               </div>
 
               <div class="grid grid-cols-2 gap-2">
-                <button id="btnApplyMapFilters" type="button" class="rounded-lg bg-[#ebc165] px-3 py-2 text-xs font-bold text-[#3f2e00] active:scale-95">Aplicar</button>
-                <button id="btnClearMapFilters" type="button" class="rounded-lg border border-[#ebc165]/70 px-3 py-2 text-xs font-bold text-[#ebc165] active:scale-95">Limpar</button>
+                <button id="btnApplyMapFilters" type="button" class="rounded-lg bg-[#ebc165] px-3 py-1.5 text-xs font-bold text-[#3f2e00] active:scale-95">Aplicar</button>
+                <button id="btnClearMapFilters" type="button" class="rounded-lg border border-[#ebc165]/70 px-3 py-1.5 text-xs font-bold text-[#ebc165] active:scale-95">Limpar</button>
               </div>
             </div>
           </div>
         </div>
 
-        <div class="mt-4">
-          <p id="responseEta" class="mt-1 text-center font-label text-[10px] uppercase tracking-[0.18em] text-on-surface-variant opacity-60 sm:tracking-[0.2em]">
-            Tempo estimado de resposta: 45 min
-          </p>
-        </div>
       </div>
     </section>
 
@@ -404,7 +429,7 @@
   </main>
 
   <!-- NAVEGAÇÃO INFERIOR -->
-  <nav class="fixed bottom-0 left-0 z-50 flex w-full items-center justify-around rounded-t-[1.5rem] border-t border-[#98d3b7]/15 bg-[#183b30]/60 px-2 pb-4 pt-3 backdrop-blur-xl shadow-nav sm:px-4 sm:pb-6 md:bottom-4 md:left-1/2 md:w-auto md:min-w-[520px] md:max-w-[700px] md:-translate-x-1/2 md:rounded-2xl md:border md:border-[#98d3b7]/20 md:px-5 md:pb-3 md:pt-2">
+  <nav class="fixed bottom-0 left-0 z-50 flex w-full items-center justify-around rounded-t-[1.5rem] border-t border-[#98d3b7]/15 bg-[#183b30]/60 px-2 pb-4 pt-3 backdrop-blur-xl shadow-nav sm:px-4 sm:pb-6 md:bottom-4 md:left-1/2 md:w-auto md:min-w-[420px] md:max-w-[90vw] md:-translate-x-1/2 md:rounded-2xl md:border md:border-[#98d3b7]/20 md:px-5 md:pb-3 md:pt-2">
     <a href="./index.html" class="flex min-w-0 flex-col items-center justify-center px-3 py-1.5 text-[#c1c8c4] transition-colors duration-300 ease-out hover:text-[#98d3b7] active:scale-90 sm:px-4">
       <span class="material-symbols-outlined">home</span>
       <span class="mt-1 font-label text-[9px] uppercase tracking-widest sm:text-[10px]">Index</span>
@@ -431,7 +456,6 @@
     const dateEl = document.getElementById("alertDate");
     const sourceEl = document.getElementById("alertSource");
     const locationEl = document.getElementById("alertLocation");
-    const etaEl = document.getElementById("responseEta");
     const pinContainer = document.getElementById("mapPinContainer");
     const detailPanel = document.getElementById("alertDetailPanel");
     const toggleDetailPanelBtn = document.getElementById("btnToggleDetailPanel");
@@ -455,6 +479,12 @@
     let isPanelCollapsed = false;
     let currentAlertCount = 0;
     const confidenceValues = ["low", "nominal", "medium", "high"];
+    const landsatColorMap = {
+      vegetation: "#22c55e",
+      water: "#3b82f6",
+      bare_soil: "#6b4f35",
+    };
+    const landsatDefaultColor = "#4da3ff";
 
     const urlParams = new URLSearchParams(window.location.search);
     const currentFilters = {
@@ -477,9 +507,9 @@
       currentFilters.days = String(days);
       mapPeriodButtons.forEach((button) => {
         const active = String(button.dataset.days) === String(days);
-        button.classList.toggle("bg-[#ebc165]", active);
-        button.classList.toggle("text-[#3f2e00]", active);
-        button.classList.toggle("border-[#ebc165]", active);
+        button.classList.toggle("bg-tertiary/70", active);
+        button.classList.toggle("text-on-tertiary", active);
+        button.classList.toggle("border-tertiary/80", active);
       });
 
       if (!keepDates) {
@@ -552,10 +582,8 @@
       statusLabel.textContent = String(currentAlertCount);
       confidencePct.textContent = `${pct}%`;
       dateEl.textContent = formatDate(alert.alert_date);
-      sourceEl.textContent = alert.source || "Fonte não informada";
+      sourceEl.textContent = humanizeSourceName(alert.source);
       locationEl.textContent = `Lat: ${Number.isFinite(lat) ? lat.toFixed(4) : "-"} / Long: ${Number.isFinite(lon) ? lon.toFixed(4) : "-"}`;
-      etaEl.textContent = `Tempo estimado de resposta: ${Math.max(15, 90 - Math.round(pct / 2))} min`;
-
       if (Number.isFinite(lat) && Number.isFinite(lon)) {
         pinFromCoordinates(lat, lon);
         if (mapInstance) {
@@ -566,9 +594,79 @@
 
     function sourceColor(sourceValue) {
       const source = String(sourceValue || "").toLowerCase();
-      if (source.includes("firms") || source.includes("queimadas")) return "#ff6b3d";
+      if (source.includes("firms") || source.includes("queimadas") || source.includes("incend")) return "#ef4444";
+      if (source.includes("gfw") || source.includes("desmatamento") || source.includes("forest")) return "#b45309";
+      if (source.includes("cluster")) return "#a78bfa";
       if (source.includes("landsat")) return "#4da3ff";
       return "#98d3b7";
+    }
+
+    function humanizeSourceName(sourceValue) {
+      const source = String(sourceValue || "").trim();
+      const normalized = source.toLowerCase();
+
+      if (!normalized) return "Fonte não informada";
+      if (normalized.includes("firms") || normalized.includes("queimadas")) return "Focos de calor";
+      if (normalized.includes("gfw") || normalized.includes("global forest watch")) return "Mudança na floresta";
+      if (normalized.includes("landsat") || normalized.includes("sentinel")) return "Monitoramento por satélite";
+
+      const clusterMatch = normalized.match(/^cluster\s*\((\d+)\)$/);
+      if (clusterMatch) {
+        return `Agrupamento de alertas (${clusterMatch[1]})`;
+      }
+
+      return source;
+    }
+
+    function classifyLandsatPoint(point) {
+      try {
+        const prop = point?.properties || {};
+        const readValue = (...keys) => {
+          for (const key of keys) {
+            const raw = prop?.[key];
+            const value = Number(raw);
+            if (Number.isFinite(value)) return value;
+          }
+          return null;
+        };
+
+        const ndvi = readValue("ndvi", "NDVI");
+        const ndwi = readValue("ndwi", "NDWI", "mndwi", "MNDWI");
+        const ndbi = readValue("ndbi", "NDBI", "bsi", "BSI");
+        const nir = readValue("nir", "NIR", "b8", "B8", "sr_b5", "SR_B5");
+        const red = readValue("red", "RED", "b4", "B4", "sr_b4", "SR_B4");
+        const green = readValue("green", "GREEN", "b3", "B3", "sr_b3", "SR_B3");
+        const swir = readValue("swir", "SWIR", "swir1", "SWIR1", "b11", "B11", "sr_b6", "SR_B6");
+
+        if (ndwi != null && ndwi > 0.2) return "water";
+        if (ndvi != null && ndvi > 0.35) return "vegetation";
+        if (ndbi != null && ndbi > 0.2) return "bare_soil";
+
+        if (nir != null && red != null && green != null) {
+          if (green > nir * 1.03 && green > red * 1.05) return "water";
+          if (nir > red * 1.2 && nir > green * 1.08) return "vegetation";
+        }
+
+        if (swir != null && nir != null && swir > nir * 1.05) {
+          return "bare_soil";
+        }
+
+        const coords = point?.geometry?.coordinates;
+        if (Array.isArray(coords) && coords.length >= 2) {
+          const lon = Number(coords[0]);
+          const lat = Number(coords[1]);
+          if (Number.isFinite(lat) && Number.isFinite(lon)) {
+            const seed = Math.abs(Math.round((lat * 1000) + (lon * 1000)));
+            const bucket = seed % 3;
+            if (bucket === 0) return "vegetation";
+            if (bucket === 1) return "water";
+            return "bare_soil";
+          }
+        }
+      } catch (_) {
+      }
+
+      return "water";
     }
 
     function initMap() {
@@ -612,7 +710,7 @@
           weight: 1,
         });
 
-        marker.bindPopup(`<strong>${alert.source || "Alerta"}</strong><br/>${formatDate(alert.alert_date)}`);
+        marker.bindPopup(`<strong>${humanizeSourceName(alert.source)}</strong><br/>${formatDate(alert.alert_date)}`);
         marker.on("click", () => {
           renderAlert(alert);
           if (selectedCircle) {
@@ -686,16 +784,24 @@
           const lat = Number(coords[1]);
           if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
 
+          let landsatColor = landsatDefaultColor;
+          try {
+            const pointType = classifyLandsatPoint(feature);
+            landsatColor = landsatColorMap[pointType] || landsatDefaultColor;
+          } catch (_) {
+            landsatColor = landsatDefaultColor;
+          }
+
           const marker = L.circleMarker([lat, lon], {
             radius: 4,
-            color: "#4da3ff",
-            fillColor: "#4da3ff",
+            color: landsatColor,
+            fillColor: landsatColor,
             fillOpacity: 0.65,
             weight: 1,
           });
 
           const prop = feature.properties || {};
-          marker.bindPopup(`<strong>Landsat</strong><br/>${formatDate(prop.date)}<br/>Resolução: ${prop.resolution || "-"}`);
+          marker.bindPopup(`<strong>Monitoramento por satélite</strong><br/>${formatDate(prop.date)}<br/>Resolução: ${prop.resolution || "-"}`);
           marker.on("click", () => {
             renderAlert({
               latitude: lat,
@@ -836,11 +942,6 @@
       isPanelCollapsed = !isPanelCollapsed;
       applyDetailPanelState(isPanelCollapsed);
     }
-
-    document.getElementById("btnCloseDetail").addEventListener("click", () => {
-      isPanelCollapsed = true;
-      applyDetailPanelState(isPanelCollapsed);
-    });
 
     document.getElementById("btnRefreshLayers").addEventListener("click", refreshMapLayers);
     toggleDetailPanelBtn.addEventListener("click", toggleDetailPanel);
