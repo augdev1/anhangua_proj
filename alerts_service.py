@@ -63,7 +63,7 @@ def _filter_by_date_range(
     """Filter alerts by alert_date within [start_date, end_date]."""
 
     if start_date is None and end_date is None:
-        return list(alerts)
+        start_date = date(date.today().year, 1, 1)
 
     out: List[Dict[str, Any]] = []
     for a in alerts:
@@ -159,6 +159,7 @@ def get_map_alerts_with_stats(
             days=days,
             confidence=confidence,
             limit=limit,
+            _no_cache=True,
         ) or []
         gfw_items: List[Dict[str, Any]] = []
         for item in gfw_items_raw:

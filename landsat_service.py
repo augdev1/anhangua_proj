@@ -18,7 +18,12 @@ def get_landsat_alerts_amazon(
 ) -> List[Dict[str, Any]]:
     """Fetch and normalize Amazon GLAD-Landsat alerts for frontend use."""
 
-    alerts = gfw_alerts.get_alerts_amazon(gfw_alerts.TOKEN, days=days, confidence=confidence)
+    alerts = gfw_alerts.get_alerts_amazon(
+        gfw_alerts.TOKEN,
+        days=days,
+        confidence=confidence,
+        _no_cache=True,
+    )
     if not alerts:
         return []
 

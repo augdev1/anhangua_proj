@@ -22,6 +22,10 @@ def ttl_cache(ttl_seconds: float):
 
         @wraps(func)
         def wrapper(*args, **kwargs):
+            no_cache = bool(kwargs.pop("_no_cache", False))
+            if no_cache:
+                return func(*args, **kwargs)
+
             key = (args, tuple(sorted(kwargs.items())))
             now = time.time()
             if key in cache:
@@ -248,7 +252,8 @@ def get_alerts_amazon(token=TOKEN, days=14, confidence=None, limit=1000):
 
     from datetime import date, timedelta
 
-    since = (date.today() - timedelta(days=days)).isoformat()
+    since_date = date.today() - timedelta(days=days)
+    since = since_date.isoformat()
 
     # For raster-based datasets the query must refer to pixel layers (fields).
     # The fields for GLAD Landsat alerts include:
@@ -291,7 +296,16 @@ def get_alerts_amazon(token=TOKEN, days=14, confidence=None, limit=1000):
                 "source": "GLAD-Landsat",
             })
 
-        alerts = filter_alerts_by_confidence(alerts, confidence)
+        filtered_by_date = []
+        for alert in alerts:
+            parsed = parse_alert_date(alert.get("alert_date"))
+            if parsed is None:
+                continue
+            if parsed < since_date:
+                continue
+            filtered_by_date.append(alert)
+
+        alerts = filter_alerts_by_confidence(filtered_by_date, confidence)
         alerts = dedupe_alerts(alerts)
         logger.info("get_alerts_amazon: %d alerts returned (days=%s confidence=%s)", len(alerts), days, confidence)
         return alerts
@@ -419,7 +433,16 @@ def parse_alert_date(val):
             # Fallback para formato simples YYYY-MM-DD
             return datetime.strptime(str(val), "%Y-%m-%d").date()
         except Exception:
-            return None
+            try:
+                # Fallback para YYYYMMDD
+                return datetime.strptime(str(val), "%Y%m%d").date()
+            except Exception:
+                try:
+                    # Fallback para timestamp unix (segundos)
+                    as_int = int(str(val))
+                    return datetime.utcfromtimestamp(as_int).date()
+                except Exception:
+                    return None
 
 
 def cluster_alerts(alerts, eps_km=1.0, min_samples=1):

@@ -8,9 +8,10 @@ import logging
 import os
 import json
 import time
+import secrets
 
 from datetime import date, datetime
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -54,6 +55,16 @@ def _parse_date(value: Optional[str]) -> Optional[date]:
         return date.fromisoformat(value)
     except Exception:
         return None
+
+
+TEST_LOGIN_USERS = {
+    (os.getenv("TEST_LOGIN_USER") or "admin").strip().lower(): {
+        "password": (os.getenv("TEST_LOGIN_PASSWORD") or "123456"),
+        "name": (os.getenv("TEST_LOGIN_NAME") or "Usuário Demo"),
+    }
+}
+
+_auth_tokens: Dict[str, Dict[str, str]] = {}
 
 # Simple in-memory rate-limiting by client IP + endpoint
 _rate_limits = {}
@@ -114,6 +125,61 @@ class Cluster(BaseModel):
     lon: float
     alert_count: int
     latest_alert: Optional[str]
+
+
+class LoginPayload(BaseModel):
+    username: str
+    password: str
+
+
+def _extract_bearer_token(authorization: Optional[str]) -> Optional[str]:
+    if not authorization:
+        return None
+    parts = authorization.strip().split(" ", 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None
+    return parts[1].strip() or None
+
+
+@app.post("/auth/login-test")
+def auth_login_test(payload: LoginPayload):
+    username = (payload.username or "").strip().lower()
+    password = payload.password or ""
+
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="username e password são obrigatórios")
+
+    user = TEST_LOGIN_USERS.get(username)
+    if not user or user.get("password") != password:
+        raise HTTPException(status_code=401, detail="Credenciais inválidas")
+
+    token = secrets.token_urlsafe(24)
+    profile = {"username": username, "name": user.get("name", username)}
+    _auth_tokens[token] = profile
+
+    logger.info("AUTH_LOGIN_TEST username=%s", username)
+    return {
+        "status": "ok",
+        "token": token,
+        "token_type": "bearer",
+        "user": profile,
+    }
+
+
+@app.get("/auth/me")
+def auth_me(authorization: Optional[str] = Header(None)):
+    token = _extract_bearer_token(authorization)
+    if not token or token not in _auth_tokens:
+        raise HTTPException(status_code=401, detail="Token inválido ou ausente")
+    return {"status": "ok", "user": _auth_tokens[token]}
+
+
+@app.post("/auth/logout")
+def auth_logout(authorization: Optional[str] = Header(None)):
+    token = _extract_bearer_token(authorization)
+    if token and token in _auth_tokens:
+        _auth_tokens.pop(token, None)
+    return {"status": "ok"}
 
 
 @app.get("/alertas/tile", response_model=List[Alert])

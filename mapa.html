@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+
+  <link
+    rel="stylesheet"
+    href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+  />
+  <link
+    rel="stylesheet"
+    href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+  />
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            outline: "#8b928e",
+            "outline-variant": "#414845",
+
+            background: "#001710",
+            surface: "#001710",
+            "surface-dim": "#001710",
+            "surface-bright": "#1d3f35",
+            "surface-variant": "#183b30",
+            "surface-container": "#00251b",
+            "surface-container-low": "#002118",
+            "surface-container-lowest": "#00120c",
+            "surface-container-high": "#0c3026",
+            "surface-container-highest": "#183b30",
+
+            primary: "#98d3b7",
+            "primary-container": "#003021",
+            "primary-fixed": "#b3f0d2",
+            "primary-fixed-dim": "#98d3b7",
+            "on-primary": "#003827",
+            "on-primary-container": "#629c82",
+            "on-primary-fixed": "#002115",
+            "on-primary-fixed-variant": "#13503b",
+
+            secondary: "#a1d2ac",
+            "secondary-container": "#255235",
+            "secondary-fixed": "#bcefc7",
+            "secondary-fixed-dim": "#a1d2ac",
+            "on-secondary": "#07381e",
+            "on-secondary-container": "#93c49f",
+            "on-secondary-fixed": "#00210e",
+            "on-secondary-fixed-variant": "#224f33",
+
+            tertiary: "#ebc165",
+            "tertiary-container": "#372700",
+            "tertiary-fixed": "#ffdf9e",
+            "tertiary-fixed-dim": "#ebc165",
+            "on-tertiary": "#3f2e00",
+            "on-tertiary-container": "#b08b36",
+            "on-tertiary-fixed": "#261a00",
+            "on-tertiary-fixed-variant": "#5b4300",
+
+            error: "#ffb4ab",
+            "error-container": "#93000a",
+            "on-error": "#690005",
+            "on-error-container": "#ffdad6",
+
+            "on-background": "#c5ebdb",
+            "on-surface": "#c5ebdb",
+            "on-surface-variant": "#c1c8c4",
+            "inverse-surface": "#c5ebdb",
+            "inverse-on-surface": "#14362c",
+            "inverse-primary": "#2f6952",
+            "surface-tint": "#98d3b7"
+          },
+          fontFamily: {
+            headline: ["Manrope", "sans-serif"],
+            body: ["Manrope", "sans-serif"],
+            label: ["Plus Jakarta Sans", "sans-serif"]
+          },
+          boxShadow: {
+            top: "0 0 40px rgba(0, 23, 16, 0.08)",
+            sheet: "0 -4px 60px rgba(0, 0, 0, 0.5)",
+            nav: "0 -4px 40px rgba(0, 0, 0, 0.2)",
+            alert: "0 0 15px rgba(235, 193, 101, 0.8)"
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    .material-symbols-outlined {
+      font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+    }
+
+    body {
+      min-height: 100dvh;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 5px;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #183b30;
+      border-radius: 10px;
+    }
+
+    #alertsMap {
+      height: 100%;
+      width: 100%;
+    }
+
+    .leaflet-container {
+      background: #003021;
+      font-family: Manrope, sans-serif;
+    }
+
+    .leaflet-tile-pane {
+      filter: sepia(0.9) hue-rotate(62deg) saturate(1.8) brightness(0.72) contrast(1.05);
+    }
+
+    .leaflet-tile {
+      mix-blend-mode: multiply;
+    }
+
+    .leaflet-control-attribution {
+      background: rgba(0, 23, 16, 0.8) !important;
+      color: #c5ebdb;
+      border-radius: 8px;
+      padding: 2px 6px;
+    }
+
+    .hamburger-btn {
+      display: inline-flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .hamburger-btn .bar {
+      width: 16px;
+      height: 2px;
+      border-radius: 999px;
+      background: #c1c8c4;
+      transition: opacity 0.2s ease;
+    }
+
+    #alertDetailPanel {
+      will-change: transform;
+    }
+
+    .floating-hamburger {
+      position: fixed;
+      left: 10px;
+      top: 84px;
+      z-index: 60;
+      height: 44px;
+      width: 44px;
+      border-radius: 999px;
+      border: 1px solid rgba(152, 211, 183, 0.25);
+      background: rgba(11, 47, 37, 0.95);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .floating-hamburger.is-visible {
+      display: inline-flex;
+    }
+  </style>
+</head>
+
+<body class="min-h-screen overflow-hidden bg-surface font-body text-on-surface selection:bg-tertiary/30 selection:text-tertiary">
+  <!-- HEADER -->
+  <header class="fixed top-0 z-50 flex h-16 w-full items-center justify-between bg-[#001710]/80 px-4 sm:px-6 backdrop-blur-xl shadow-top">
+    <div class="flex min-w-0 items-center gap-3">
+      <div class="h-10 w-10 shrink-0 overflow-hidden rounded-full border border-primary/20 bg-primary-container flex items-center justify-center">
+        <img
+          src="https://lh3.googleusercontent.com/aida-public/AB6AXuAqopGSORSKiC2HXLsR1SGnSG_5HnbU0RAX5XmbrwGDrBhrM7Z3mfHuGOBjxkd0ll7k0vUUnufoDgVneJ3oqE7m9rcbZ8grNqQPMMM0y-S6K-kS2HnkLB1A3AQVvSNV955BIeeYJPrFcQUC0-haUcSSZJT8sGmLcTruvy1Gr785WyALUxRoqfpW2ajrSybRvjytI1U9he9qxbNXsh-HiaImNnxaMo6GQHzw7zsS9ffrWsNF3h7XbWqkeUt1HE2Dz_dnCdGBHCtVWi8"
+          alt="Perfil"
+          class="h-8 w-8 rounded-full object-cover bg-primary"
+        />
+      </div>
+
+      <h1 class="truncate font-headline text-lg sm:text-xl font-black tracking-tighter text-primary">
+        ANHANGÁ
+      </h1>
+    </div>
+
+    <div class="flex shrink-0 items-center gap-3 sm:gap-4">
+      <button class="h-10 w-10 flex items-center justify-center rounded-full bg-[#183b30]/60 material-symbols-outlined text-primary transition-opacity duration-200 hover:opacity-80 active:scale-95">
+        sensors
+      </button>
+    </div>
+  </header>
+
+  <!-- MAPA / FUNDO -->
+  <main class="relative h-screen w-full bg-surface-container-lowest">
+    <div class="absolute inset-0 z-0">
+      <div id="alertsMap"></div>
+      <div class="absolute inset-0 bg-[#003021]/55 pointer-events-none"></div>
+      <div class="absolute inset-0 bg-gradient-to-b from-[#0b3d2f]/40 via-[#003021]/30 to-surface/80 pointer-events-none"></div>
+    </div>
+
+    <!-- INDICADOR DE ALERTA -->
+    <div id="mapPinContainer" class="absolute left-[55%] top-[40%] z-10">
+      <div class="relative flex items-center justify-center">
+        <div class="absolute h-10 w-10 animate-ping rounded-full bg-tertiary/20 sm:h-12 sm:w-12"></div>
+        <div class="h-4 w-4 rounded-full border-2 border-surface bg-tertiary shadow-alert"></div>
+      </div>
+    </div>
+
+    <div class="absolute top-20 right-4 z-20 rounded-xl bg-[#001710]/70 backdrop-blur-md border border-[#98d3b7]/20 px-3 py-2 text-[11px] text-on-surface-variant space-y-1">
+      <div class="flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-[#ff6b3d]"></span> Queimadas (FIRMS)</div>
+      <div class="flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-[#98d3b7]"></span> Alertas GFW</div>
+      <div class="flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-[#4da3ff]"></span> Pontos Landsat</div>
+      <button id="btnRefreshLayers" class="mt-2 w-full rounded-lg bg-[#183b30]/80 px-2 py-1.5 text-[11px] font-semibold text-primary hover:opacity-90 active:scale-95">
+        Atualizar Camadas
+      </button>
+    </div>
+
+    <!-- PAINEL DE DETALHE -->
+    <section id="alertDetailPanel"
+          class="fixed bottom-0 left-0 z-40 flex h-[76dvh] w-full flex-col overflow-hidden rounded-t-[1.75rem] bg-[#0b2f25] shadow-sheet
+            sm:h-[72dvh] sm:rounded-t-[2rem]
+            md:top-16 md:bottom-0 md:left-0 md:right-auto md:h-[calc(100dvh-4rem)] md:w-[clamp(340px,34vw,470px)] md:max-w-[92vw] md:rounded-none md:border-r md:border-[#98d3b7]/20
+            transition-transform duration-300">
+
+      <div class="flex w-full cursor-grab justify-center pb-2 pt-3 active:cursor-grabbing">
+        <div class="h-1.5 w-12 rounded-full bg-outline-variant/40"></div>
+      </div>
+
+      <div class="flex items-center justify-between px-4 py-4 sm:px-6">
+        <div class="flex min-w-0 items-center gap-3">
+          <span class="material-symbols-outlined shrink-0 text-2xl text-tertiary sm:text-3xl" style="font-variation-settings: 'FILL' 1;">
+            warning
+          </span>
+          <h2 class="truncate font-headline text-lg font-bold text-on-surface sm:text-2xl">
+            Detalhe do Alerta
+          </h2>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button id="btnToggleDetailPanel" aria-label="Expandir ou recolher painel" aria-expanded="true" class="hamburger-btn flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-container-high transition-colors hover:bg-surface-container-highest">
+            <span class="bar"></span>
+            <span class="bar"></span>
+            <span class="bar"></span>
+          </button>
+
+          <button id="btnCloseDetail" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-container-high transition-colors hover:bg-surface-container-highest">
+            <span class="material-symbols-outlined text-on-surface-variant">close</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="custom-scrollbar flex-1 overflow-y-auto px-4 pb-6 sm:px-6 sm:pb-6 md:pb-4">
+        <div class="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div class="rounded-[1.25rem] border border-tertiary/10 bg-surface-container-low p-4 sm:rounded-[1.5rem]">
+            <span class="mb-2 block font-label text-[10px] uppercase tracking-widest text-on-surface-variant">
+              Número de Alertas
+            </span>
+
+            <div class="inline-flex items-center gap-2 rounded-full bg-tertiary-container px-3 py-1">
+              <span class="h-2 w-2 animate-pulse rounded-full bg-tertiary"></span>
+              <span id="alertStatusLabel" class="font-label text-xs font-bold uppercase tracking-wider text-tertiary">
+                0
+              </span>
+            </div>
+          </div>
+
+          <div class="rounded-[1.25rem] border border-primary/10 bg-surface-container-low p-4 sm:rounded-[1.5rem]">
+            <span class="mb-2 block font-label text-[10px] uppercase tracking-widest text-on-surface-variant">
+              Nível de Confiança
+            </span>
+
+            <div class="flex items-baseline gap-1">
+              <span id="alertConfidencePct" class="font-headline text-2xl font-black text-tertiary sm:text-3xl">98%</span>
+              <span class="material-symbols-outlined text-sm text-tertiary" style="font-variation-settings: 'FILL' 1;">
+                verified
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-6 space-y-4">
+          <div class="flex items-center justify-between rounded-[1.25rem] bg-surface-container-high/40 p-4 sm:rounded-[1.5rem] sm:p-5">
+            <div class="flex min-w-0 items-center gap-3 sm:gap-4">
+              <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-container-highest">
+                <span class="material-symbols-outlined text-primary">calendar_today</span>
+              </div>
+
+              <div class="min-w-0">
+                <p class="font-label text-[10px] uppercase tracking-widest text-on-surface-variant">
+                  Data do Alerta
+                </p>
+                <p id="alertDate" class="truncate text-sm font-medium text-on-surface sm:text-base">12/03/2024 - 14:30</p>
+              </div>
+            </div>
+
+            <span class="material-symbols-outlined shrink-0 text-outline">chevron_right</span>
+          </div>
+
+          <div class="flex items-center justify-between rounded-[1.25rem] bg-surface-container-high/40 p-4 sm:rounded-[1.5rem] sm:p-5">
+            <div class="flex min-w-0 items-center gap-3 sm:gap-4">
+              <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-container-highest">
+                <span class="material-symbols-outlined text-primary">satellite_alt</span>
+              </div>
+
+              <div class="min-w-0">
+                <p class="font-label text-[10px] uppercase tracking-widest text-on-surface-variant">
+                  Fonte
+                </p>
+                <p id="alertSource" class="truncate text-sm font-medium text-on-surface sm:text-base">Sentinel-2 Satellite</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="rounded-[1.25rem] bg-surface-container-high/40 p-4 sm:rounded-[1.5rem] sm:p-5">
+            <div class="mb-4 flex items-center gap-3 sm:gap-4">
+              <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-container-highest">
+                <span class="material-symbols-outlined text-primary">location_on</span>
+              </div>
+
+              <div class="min-w-0">
+                <p class="font-label text-[10px] uppercase tracking-widest text-on-surface-variant">
+                  Localização
+                </p>
+                <p id="alertLocation" class="break-words text-sm font-medium text-on-surface sm:text-base">
+                  Lat: -3.119 / Long: -60.021
+                </p>
+              </div>
+            </div>
+
+            <div class="mt-4 rounded-[1rem] border border-[#98d3b7]/15 bg-[#001710]/45 p-4 space-y-4">
+              <p class="font-label text-[10px] uppercase tracking-widest text-on-surface-variant">Filtros do Mapa</p>
+
+              <div>
+                <p class="mb-2 font-label text-[10px] uppercase tracking-widest text-on-surface-variant">Período</p>
+                <div class="grid grid-cols-3 gap-2">
+                  <button type="button" data-days="1" class="map-period-btn rounded-lg border border-[#98d3b7]/20 px-2 py-2 text-xs font-semibold text-on-surface-variant">24h</button>
+                  <button type="button" data-days="7" class="map-period-btn rounded-lg border border-[#98d3b7]/20 px-2 py-2 text-xs font-semibold text-on-surface-variant">7 dias</button>
+                  <button type="button" data-days="30" class="map-period-btn rounded-lg border border-[#98d3b7]/20 px-2 py-2 text-xs font-semibold text-on-surface-variant">30 dias</button>
+                </div>
+              </div>
+
+              <div>
+                <div class="mb-2 flex items-center justify-between">
+                  <span class="font-label text-[10px] uppercase tracking-widest text-on-surface-variant">Confiança</span>
+                  <span id="mapConfidenceBadge" class="rounded bg-[#ebc165] px-2 py-0.5 text-[10px] font-bold uppercase text-[#3f2e00]">nominal</span>
+                </div>
+                <input id="mapConfidenceRange" min="0" max="3" step="1" value="1" type="range" class="w-full" />
+              </div>
+
+              <div class="grid grid-cols-2 gap-2">
+                <input id="mapStartDate" type="date" class="rounded-lg border border-[#98d3b7]/15 bg-black/20 px-2 py-2 text-xs text-on-surface" />
+                <input id="mapEndDate" type="date" class="rounded-lg border border-[#98d3b7]/15 bg-black/20 px-2 py-2 text-xs text-on-surface" />
+              </div>
+
+              <div>
+                <label for="mapLayersMode" class="mb-2 block font-label text-[10px] uppercase tracking-widest text-on-surface-variant">Camadas</label>
+                <select id="mapLayersMode" class="w-full rounded-lg border border-[#98d3b7]/15 bg-black/20 px-2 py-2 text-xs text-on-surface">
+                  <option value="alerts">Alertas</option>
+                  <option value="clusters">Clusters</option>
+                </select>
+              </div>
+
+              <div class="grid grid-cols-2 gap-2">
+                <button id="btnApplyMapFilters" type="button" class="rounded-lg bg-[#ebc165] px-3 py-2 text-xs font-bold text-[#3f2e00] active:scale-95">Aplicar</button>
+                <button id="btnClearMapFilters" type="button" class="rounded-lg border border-[#ebc165]/70 px-3 py-2 text-xs font-bold text-[#ebc165] active:scale-95">Limpar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-4">
+          <p id="responseEta" class="mt-1 text-center font-label text-[10px] uppercase tracking-[0.18em] text-on-surface-variant opacity-60 sm:tracking-[0.2em]">
+            Tempo estimado de resposta: 45 min
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <button id="btnFloatingHamburger" aria-label="Abrir painel de detalhes" class="floating-hamburger hamburger-btn">
+      <span class="bar"></span>
+      <span class="bar"></span>
+      <span class="bar"></span>
+    </button>
+  </main>
+
+  <!-- NAVEGAÇÃO INFERIOR -->
+  <nav class="fixed bottom-0 left-0 z-50 flex w-full items-center justify-around rounded-t-[1.5rem] border-t border-[#98d3b7]/15 bg-[#183b30]/60 px-2 pb-4 pt-3 backdrop-blur-xl shadow-nav sm:px-4 sm:pb-6 md:bottom-4 md:left-1/2 md:w-auto md:min-w-[520px] md:max-w-[700px] md:-translate-x-1/2 md:rounded-2xl md:border md:border-[#98d3b7]/20 md:px-5 md:pb-3 md:pt-2">
+    <a href="./index.html" class="flex min-w-0 flex-col items-center justify-center px-3 py-1.5 text-[#c1c8c4] transition-colors duration-300 ease-out hover:text-[#98d3b7] active:scale-90 sm:px-4">
+      <span class="material-symbols-outlined">home</span>
+      <span class="mt-1 font-label text-[9px] uppercase tracking-widest sm:text-[10px]">Index</span>
+    </a>
+
+      <a href="./mapa.html" class="flex min-w-0 flex-col items-center justify-center rounded-xl bg-[#ebc165] px-3 py-1.5 text-[#3f2e00] duration-300 ease-out active:scale-90 sm:px-4">
+      <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">map</span>
+      <span class="mt-1 font-label text-[9px] uppercase tracking-widest sm:text-[10px]">Mapa</span>
+    </a>
+
+    <a href="./insights.html" class="flex min-w-0 flex-col items-center justify-center px-3 py-1.5 text-[#c1c8c4] transition-colors duration-300 ease-out hover:text-[#98d3b7] active:scale-90 sm:px-4">
+      <span class="material-symbols-outlined">analytics</span>
+      <span class="mt-1 font-label text-[9px] uppercase tracking-widest sm:text-[10px]">Insights</span>
+    </a>
+  </nav>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script>
+    const API_BASE = localStorage.getItem("ANHANGA_API_BASE") || "http://127.0.0.1:8000";
+    const token = localStorage.getItem("ANHANGA_TOKEN") || "";
+
+    const statusLabel = document.getElementById("alertStatusLabel");
+    const confidencePct = document.getElementById("alertConfidencePct");
+    const dateEl = document.getElementById("alertDate");
+    const sourceEl = document.getElementById("alertSource");
+    const locationEl = document.getElementById("alertLocation");
+    const etaEl = document.getElementById("responseEta");
+    const pinContainer = document.getElementById("mapPinContainer");
+    const detailPanel = document.getElementById("alertDetailPanel");
+    const toggleDetailPanelBtn = document.getElementById("btnToggleDetailPanel");
+    const floatingHamburgerBtn = document.getElementById("btnFloatingHamburger");
+    const mapPeriodButtons = [...document.querySelectorAll(".map-period-btn")];
+    const mapConfidenceRange = document.getElementById("mapConfidenceRange");
+    const mapConfidenceBadge = document.getElementById("mapConfidenceBadge");
+    const mapStartDateInput = document.getElementById("mapStartDate");
+    const mapEndDateInput = document.getElementById("mapEndDate");
+    const mapLayersModeSelect = document.getElementById("mapLayersMode");
+    const btnApplyMapFilters = document.getElementById("btnApplyMapFilters");
+    const btnClearMapFilters = document.getElementById("btnClearMapFilters");
+
+    let mapInstance = null;
+    let unifiedLayer = null;
+    let landsatLayer = null;
+    let selectedCircle = null;
+    let currentDays = "7";
+    let landsatTimer = null;
+    let currentAlert = null;
+    let isPanelCollapsed = false;
+    let currentAlertCount = 0;
+    const confidenceValues = ["low", "nominal", "medium", "high"];
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const currentFilters = {
+      days: urlParams.get("days") || "7",
+      confidence: urlParams.get("confidence") || "nominal",
+      start_date: urlParams.get("start_date") || "",
+      end_date: urlParams.get("end_date") || "",
+      layers: urlParams.get("layers") === "clusters" ? "clusters" : "alerts",
+    };
+
+    function updateDefaultDates(days) {
+      const end = new Date();
+      const start = new Date();
+      start.setDate(end.getDate() - Number(days) + 1);
+      mapEndDateInput.value = end.toISOString().slice(0, 10);
+      mapStartDateInput.value = start.toISOString().slice(0, 10);
+    }
+
+    function setMapPeriod(days, keepDates = false) {
+      currentFilters.days = String(days);
+      mapPeriodButtons.forEach((button) => {
+        const active = String(button.dataset.days) === String(days);
+        button.classList.toggle("bg-[#ebc165]", active);
+        button.classList.toggle("text-[#3f2e00]", active);
+        button.classList.toggle("border-[#ebc165]", active);
+      });
+
+      if (!keepDates) {
+        updateDefaultDates(days);
+      }
+    }
+
+    function updateMapConfidenceBadge() {
+      const confidence = confidenceValues[Number(mapConfidenceRange.value)] || "nominal";
+      mapConfidenceBadge.textContent = confidence;
+      currentFilters.confidence = confidence;
+    }
+
+    function applyFiltersToControls() {
+      const idx = Math.max(0, confidenceValues.indexOf(String(currentFilters.confidence || "nominal").toLowerCase()));
+      mapConfidenceRange.value = String(idx);
+      updateMapConfidenceBadge();
+      setMapPeriod(currentFilters.days, Boolean(currentFilters.start_date || currentFilters.end_date));
+      if (currentFilters.start_date) mapStartDateInput.value = currentFilters.start_date;
+      if (currentFilters.end_date) mapEndDateInput.value = currentFilters.end_date;
+      mapLayersModeSelect.value = currentFilters.layers;
+    }
+
+    function confidenceToPct(confidence) {
+      const key = String(confidence || "").trim().toLowerCase();
+      if (key === "high" || key === "h") return 95;
+      if (key === "medium" || key === "nominal" || key === "n") return 70;
+      if (key === "low" || key === "l") return 40;
+      return 60;
+    }
+
+    function formatDate(value) {
+      if (!value) return "Data indisponível";
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) return String(value);
+      return parsed.toLocaleString("pt-BR");
+    }
+
+    function pinFromCoordinates(lat, lon) {
+      if (mapInstance) {
+        const point = mapInstance.latLngToContainerPoint([lat, lon]);
+        const size = mapInstance.getSize();
+        if (size.x > 0 && size.y > 0) {
+          const left = (point.x / size.x) * 100;
+          const top = (point.y / size.y) * 100;
+          pinContainer.style.top = `${Math.min(92, Math.max(8, top))}%`;
+          pinContainer.style.left = `${Math.min(92, Math.max(8, left))}%`;
+          return;
+        }
+      }
+
+      const minLat = -20;
+      const maxLat = 8;
+      const minLon = -75;
+      const maxLon = -44;
+
+      const top = 100 - ((lat - minLat) / (maxLat - minLat)) * 100;
+      const left = ((lon - minLon) / (maxLon - minLon)) * 100;
+
+      pinContainer.style.top = `${Math.min(92, Math.max(8, top))}%`;
+      pinContainer.style.left = `${Math.min(92, Math.max(8, left))}%`;
+    }
+
+    function renderAlert(alert) {
+      currentAlert = alert;
+      const lat = Number(alert.latitude);
+      const lon = Number(alert.longitude);
+      const pct = confidenceToPct(alert.confidence);
+
+      statusLabel.textContent = String(currentAlertCount);
+      confidencePct.textContent = `${pct}%`;
+      dateEl.textContent = formatDate(alert.alert_date);
+      sourceEl.textContent = alert.source || "Fonte não informada";
+      locationEl.textContent = `Lat: ${Number.isFinite(lat) ? lat.toFixed(4) : "-"} / Long: ${Number.isFinite(lon) ? lon.toFixed(4) : "-"}`;
+      etaEl.textContent = `Tempo estimado de resposta: ${Math.max(15, 90 - Math.round(pct / 2))} min`;
+
+      if (Number.isFinite(lat) && Number.isFinite(lon)) {
+        pinFromCoordinates(lat, lon);
+        if (mapInstance) {
+          mapInstance.panTo([lat, lon], { animate: true, duration: 0.8 });
+        }
+      }
+    }
+
+    function sourceColor(sourceValue) {
+      const source = String(sourceValue || "").toLowerCase();
+      if (source.includes("firms") || source.includes("queimadas")) return "#ff6b3d";
+      if (source.includes("landsat")) return "#4da3ff";
+      return "#98d3b7";
+    }
+
+    function initMap() {
+      if (!window.L || mapInstance) return;
+
+      mapInstance = L.map("alertsMap", {
+        zoomControl: true,
+        preferCanvas: true,
+      }).setView([-6.0, -60.0], 5);
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 18,
+        attribution: "&copy; OpenStreetMap",
+      }).addTo(mapInstance);
+
+      unifiedLayer = L.layerGroup().addTo(mapInstance);
+      landsatLayer = L.layerGroup().addTo(mapInstance);
+
+      mapInstance.on("moveend", () => {
+        if (landsatTimer) clearTimeout(landsatTimer);
+        landsatTimer = setTimeout(() => {
+          loadLandsatLayer(currentDays);
+        }, 450);
+      });
+    }
+
+    function plotUnifiedAlerts(alerts) {
+      if (!mapInstance || !unifiedLayer) return;
+      unifiedLayer.clearLayers();
+
+      alerts.forEach((alert) => {
+        const lat = Number(alert.latitude);
+        const lon = Number(alert.longitude);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+        const marker = L.circleMarker([lat, lon], {
+          radius: 5,
+          color: sourceColor(alert.source),
+          fillColor: sourceColor(alert.source),
+          fillOpacity: 0.75,
+          weight: 1,
+        });
+
+        marker.bindPopup(`<strong>${alert.source || "Alerta"}</strong><br/>${formatDate(alert.alert_date)}`);
+        marker.on("click", () => {
+          renderAlert(alert);
+          if (selectedCircle) {
+            selectedCircle.setStyle({ radius: 5, weight: 1 });
+          }
+          selectedCircle = marker;
+          marker.setStyle({ radius: 7, weight: 2 });
+        });
+
+        marker.addTo(unifiedLayer);
+      });
+    }
+
+    function normalizeAlertsFromPayload(payload, layersMode) {
+      const data = Array.isArray(payload?.data) ? payload.data : [];
+
+      if (layersMode === "clusters") {
+        return data.map((cluster) => ({
+          latitude: cluster.lat,
+          longitude: cluster.lon,
+          alert_date: cluster.latest_alert,
+          confidence: cluster.confidence || "nominal",
+          source: `cluster (${cluster.alert_count || 0})`,
+        }));
+      }
+
+      return data;
+    }
+
+    function normalizeCachedAlerts(rawData) {
+      if (!Array.isArray(rawData)) return [];
+
+      if (rawData.length && rawData[0] && rawData[0].latitude != null && rawData[0].longitude != null) {
+        return rawData;
+      }
+
+      return rawData
+        .filter((item) => item && item.lat != null && item.lon != null)
+        .map((cluster) => ({
+          latitude: cluster.lat,
+          longitude: cluster.lon,
+          alert_date: cluster.latest_alert,
+          confidence: cluster.confidence || "nominal",
+          source: `cluster (${cluster.alert_count || 0})`,
+        }));
+    }
+
+    async function loadLandsatLayer(days) {
+      if (!mapInstance || !landsatLayer) return;
+      try {
+        const bounds = mapInstance.getBounds();
+        const bbox = [
+          bounds.getWest().toFixed(4),
+          bounds.getSouth().toFixed(4),
+          bounds.getEast().toFixed(4),
+          bounds.getNorth().toFixed(4),
+        ].join(",");
+
+        const response = await fetch(`${API_BASE}/alertas/landsat?days=${days}&limit=300&bbox=${bbox}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload || !Array.isArray(payload.features)) return;
+
+        landsatLayer.clearLayers();
+        payload.features.forEach((feature) => {
+          const coords = feature?.geometry?.coordinates || [];
+          if (coords.length < 2) return;
+
+          const lon = Number(coords[0]);
+          const lat = Number(coords[1]);
+          if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+          const marker = L.circleMarker([lat, lon], {
+            radius: 4,
+            color: "#4da3ff",
+            fillColor: "#4da3ff",
+            fillOpacity: 0.65,
+            weight: 1,
+          });
+
+          const prop = feature.properties || {};
+          marker.bindPopup(`<strong>Landsat</strong><br/>${formatDate(prop.date)}<br/>Resolução: ${prop.resolution || "-"}`);
+          marker.on("click", () => {
+            renderAlert({
+              latitude: lat,
+              longitude: lon,
+              alert_date: prop.date,
+              confidence: "nominal",
+              source: "landsat",
+            });
+          });
+
+          marker.addTo(landsatLayer);
+        });
+      } catch (_) {
+      }
+    }
+
+    async function loadAlert(filters = currentFilters) {
+      const days = filters.days || "7";
+      const confidence = filters.confidence || "nominal";
+      const startDate = filters.start_date || "";
+      const endDate = filters.end_date || "";
+      const layersMode = filters.layers === "clusters" ? "clusters" : "alerts";
+      currentDays = days;
+
+      try {
+        const cached = localStorage.getItem("ANHANGA_LAST_FILTER_RESULT");
+        if (cached) {
+          const cachedData = normalizeCachedAlerts(JSON.parse(cached));
+          if (cachedData.length) {
+            currentAlertCount = cachedData.length;
+            plotUnifiedAlerts(cachedData);
+            loadLandsatLayer(days);
+            renderAlert(cachedData[0]);
+            return;
+          }
+        }
+
+        const endpoint = layersMode === "clusters" ? "/alertas/mapa/clusters" : "/alertas/unificado";
+        const query = new URLSearchParams({
+          days,
+          confidence,
+          limit: "200",
+        });
+
+        if (startDate) query.set("start_date", startDate);
+        if (endDate) query.set("end_date", endDate);
+
+        const response = await fetch(`${API_BASE}${endpoint}?${query.toString()}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.detail || "Falha ao carregar alerta.");
+        }
+
+        const alerts = normalizeAlertsFromPayload(payload, layersMode);
+        if (!alerts.length) {
+          throw new Error("Nenhum alerta encontrado para os filtros atuais.");
+        }
+
+        currentAlertCount = alerts.length;
+        plotUnifiedAlerts(alerts);
+        loadLandsatLayer(days);
+        renderAlert(alerts[0]);
+      } catch (error) {
+        currentAlertCount = 0;
+        statusLabel.textContent = "0";
+        sourceEl.textContent = error.message || "Erro ao carregar dados";
+      }
+    }
+
+    async function refreshMapLayers() {
+      const button = document.getElementById("btnRefreshLayers");
+      const original = button.textContent;
+      button.disabled = true;
+      button.textContent = "Atualizando...";
+      try {
+        await loadAlert(currentFilters);
+      } finally {
+        button.disabled = false;
+        button.textContent = original;
+      }
+    }
+
+    async function applyMapFilters() {
+      currentFilters.start_date = mapStartDateInput.value || "";
+      currentFilters.end_date = mapEndDateInput.value || "";
+      currentFilters.layers = mapLayersModeSelect.value === "clusters" ? "clusters" : "alerts";
+
+      btnApplyMapFilters.disabled = true;
+      btnApplyMapFilters.textContent = "Aplicando...";
+      try {
+        localStorage.removeItem("ANHANGA_LAST_FILTER_RESULT");
+        await loadAlert(currentFilters);
+      } finally {
+        btnApplyMapFilters.disabled = false;
+        btnApplyMapFilters.textContent = "Aplicar";
+      }
+    }
+
+    async function clearMapFilters() {
+      currentFilters.confidence = "nominal";
+      currentFilters.start_date = "";
+      currentFilters.end_date = "";
+      currentFilters.layers = "alerts";
+      setMapPeriod("7");
+      mapLayersModeSelect.value = "alerts";
+      mapConfidenceRange.value = "1";
+      updateMapConfidenceBadge();
+      localStorage.removeItem("ANHANGA_LAST_FILTER_RESULT");
+      await loadAlert(currentFilters);
+    }
+
+    function applyDetailPanelState(collapsed) {
+      const isDesktop = window.matchMedia("(min-width: 768px)").matches;
+
+      if (isDesktop) {
+        const panelWidth = detailPanel.getBoundingClientRect().width || 420;
+        const offset = Math.max(0, panelWidth + 8);
+        detailPanel.style.transform = collapsed ? `translateX(-${offset}px)` : "translateX(0)";
+        floatingHamburgerBtn.classList.toggle("is-visible", collapsed);
+      } else {
+        const panelHeight = detailPanel.getBoundingClientRect().height || window.innerHeight * 0.72;
+        const mobilePeek = 84;
+        const offset = Math.max(0, panelHeight - mobilePeek);
+        detailPanel.style.transform = collapsed ? `translateY(${offset}px)` : "translateY(0)";
+        floatingHamburgerBtn.classList.remove("is-visible");
+      }
+
+      toggleDetailPanelBtn.setAttribute("aria-expanded", String(!collapsed));
+
+      if (mapInstance) {
+        setTimeout(() => mapInstance.invalidateSize(), 320);
+      }
+    }
+
+    function toggleDetailPanel() {
+      isPanelCollapsed = !isPanelCollapsed;
+      applyDetailPanelState(isPanelCollapsed);
+    }
+
+    document.getElementById("btnCloseDetail").addEventListener("click", () => {
+      isPanelCollapsed = true;
+      applyDetailPanelState(isPanelCollapsed);
+    });
+
+    document.getElementById("btnRefreshLayers").addEventListener("click", refreshMapLayers);
+    toggleDetailPanelBtn.addEventListener("click", toggleDetailPanel);
+    mapPeriodButtons.forEach((button) => {
+      button.addEventListener("click", () => setMapPeriod(button.dataset.days));
+    });
+    mapConfidenceRange.addEventListener("input", updateMapConfidenceBadge);
+    btnApplyMapFilters.addEventListener("click", applyMapFilters);
+    btnClearMapFilters.addEventListener("click", clearMapFilters);
+    floatingHamburgerBtn.addEventListener("click", () => {
+      isPanelCollapsed = false;
+      applyDetailPanelState(isPanelCollapsed);
+    });
+
+    window.addEventListener("resize", () => {
+      applyDetailPanelState(isPanelCollapsed);
+    });
+
+    initMap();
+    applyFiltersToControls();
+    applyDetailPanelState(false);
+    loadAlert(currentFilters);
+  </script>
+</body>
+</html>
