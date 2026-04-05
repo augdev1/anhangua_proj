@@ -3,7 +3,6 @@ import socket
 import subprocess
 import sys
 import time
-import webbrowser
 from pathlib import Path
 
 
@@ -78,8 +77,6 @@ def main() -> int:
     print(f"Backend ativo em: http://{BACKEND_HOST}:{BACKEND_PORT}")
     print(f"Frontend: {app_url}")
     print("Login de teste padrão: admin / 123456")
-
-    webbrowser.open(app_url)
 
     print("\nServiços em execução. Pressione Ctrl+C para encerrar.")
 
