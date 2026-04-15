@@ -1,271 +1,168 @@
-<!DOCTYPE html>
-<html class="dark" lang="pt-BR">
-<head>
-  <meta charset="utf-8" />
-  <meta content="width=device-width, initial-scale=1.0" name="viewport" />
-  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+# Anhangá — Plataforma de Monitoramento de Alertas Ambientais com IA
 
-  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+Este projeto reúne backend (FastAPI) e frontend (HTML + Tailwind + Leaflet) para monitorar alertas ambientais na Amazônia, agora com **inteligência artificial para análise visual em tempo real**.
 
-  <script id="tailwind-config">
-    tailwind.config = {
-      darkMode: "class",
-      theme: {
-        extend: {
-          colors: {
-            "secondary": "#a1d2ac",
-            "outline-variant": "#414845",
-            "on-surface": "#c5ebdb",
-            "surface-container-low": "#002118",
-            "surface-container-lowest": "#00120c",
-            "on-primary-fixed": "#002115",
-            "error-container": "#93000a",
-            "inverse-surface": "#c5ebdb",
-            "surface-container-highest": "#183b30",
-            "inverse-on-surface": "#14362c",
-            "tertiary-fixed-dim": "#ebc165",
-            "on-tertiary-container": "#b08b36",
-            "surface": "#001710",
-            "tertiary-fixed": "#ffdf9e",
-            "tertiary-container": "#372700",
-            "on-tertiary-fixed-variant": "#5b4300",
-            "on-secondary-fixed-variant": "#224f33",
-            "on-secondary-fixed": "#00210e",
-            "secondary-fixed-dim": "#a1d2ac",
-            "primary-fixed-dim": "#98d3b7",
-            "on-error-container": "#ffdad6",
-            "on-tertiary": "#3f2e00",
-            "surface-dim": "#001710",
-            "outline": "#8b928e",
-            "surface-variant": "#183b30",
-            "background": "#001710",
-            "on-primary": "#003827",
-            "on-primary-fixed-variant": "#13503b",
-            "surface-tint": "#98d3b7",
-            "secondary-fixed": "#bcefc7",
-            "on-tertiary-fixed": "#261a00",
-            "on-secondary": "#07381e",
-            "inverse-primary": "#2f6952",
-            "on-surface-variant": "#c1c8c4",
-            "surface-container-high": "#0c3026",
-            "surface-bright": "#1d3f35",
-            "primary-fixed": "#b3f0d2",
-            "error": "#ffb4ab",
-            "primary": "#98d3b7",
-            "on-secondary-container": "#93c49f",
-            "on-primary-container": "#629c82",
-            "tertiary": "#ebc165",
-            "on-error": "#690005",
-            "primary-container": "#003021",
-            "surface-container": "#00251b",
-            "secondary-container": "#255235",
-            "on-background": "#c5ebdb"
-          },
-          fontFamily: {
-            "headline": ["Manrope"],
-            "body": ["Manrope"],
-            "label": ["Plus Jakarta Sans"]
-          },
-          boxShadow: {
-            glow: "0 0 40px rgba(235, 193, 101, 0.18)",
-            glowStrong: "0 0 60px rgba(235, 193, 101, 0.28)"
-          }
-        },
-      },
-    }
-  </script>
+---
 
-  <style>
-    .circuit-pattern {
-      background-image:
-        radial-gradient(circle at 2px 2px, rgba(152, 211, 183, 0.045) 1px, transparent 0);
-      background-size: 24px 24px;
-    }
+## 🌎 Objetivo do projeto
 
-    .logo-ring {
-      background:
-        radial-gradient(circle, rgba(201,162,74,0.18) 0%, rgba(201,162,74,0.08) 35%, rgba(201,162,74,0.02) 60%, transparent 75%);
-    }
+O sistema foi construído para demonstrar uma solução integrada que:
 
-    .logo-circle {
-    overflow: hidden; /* 🔥 MUITO IMPORTANTE */
-    }
+1. consulta múltiplas fontes públicas de dados;
+2. unifica e normaliza os alertas;
+3. entrega visualização geográfica e dashboards;
+4. aplica **IA para classificação visual do ambiente**;
+5. registra evidências para auditoria.
 
-    .title-glow {
-      text-shadow: 0 0 16px rgba(201, 162, 74, 0.12);
-    }
+---
 
-    .deer-img {
-    width: 70%;
-    height: 70%;
-    object-fit: cover;
-    border-radius: 50%; /* 🔥 ISSO remove o quadrado */
-    filter:
-        drop-shadow(0 0 18px rgba(201, 162, 74, 0.4))
-        brightness(1.15)
-        contrast(1.1);
-    }
+## 🚀 Novidade: Monitoramento com IA
 
-    body {
-      min-height: 100dvh;
-    }
-  </style>
-</head>
+O projeto agora inclui um módulo de visão computacional com:
 
-<body class="bg-surface text-on-surface font-body overflow-x-hidden">
-  <main class="relative min-h-screen w-full overflow-hidden flex items-center justify-center">
-    <!-- Fundo -->
-    <div class="absolute inset-0 circuit-pattern pointer-events-none"></div>
-    <div class="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(31,90,68,0.20),transparent_35%),linear-gradient(to_bottom,rgba(0,23,16,0.95),rgba(0,18,12,1))] pointer-events-none"></div>
-    <div class="absolute inset-0 bg-gradient-to-b from-surface via-transparent to-surface-container-low opacity-90 pointer-events-none"></div>
-    <div class="absolute left-1/2 top-[34%] -translate-x-1/2 -translate-y-1/2 w-[85vw] max-w-[700px] aspect-square rounded-full bg-primary-container/20 blur-[120px] pointer-events-none"></div>
+* Integração com **Teachable Machine**
+* Modelo exportado em **Keras (`keras_Model.h5`)**
+* Classificação em tempo real via webcam
+* Detecção automática de:
 
-    <!-- Container central -->
-    <section class="relative z-10 w-full max-w-[460px] lg:max-w-[560px] mx-auto px-6 sm:px-8 py-10 sm:py-14 min-h-screen flex flex-col items-center justify-between">
-      
-      <!-- topo vazio para respiro -->
-      <div class="h-4 sm:h-6"></div>
+  * 🌳 Área preservada
+  * 🔥 Área queimada
 
-      <!-- conteúdo principal -->
-      <div class="w-full flex flex-col items-center text-center">
-        <!-- Logo com destaque circular -->
-        <div class="relative mb-8 sm:mb-10">
-          <div class="logo-ring absolute inset-0 scale-[1.45] rounded-full blur-2xl"></div>
+---
 
-          <div class="logo-circle relative rounded-full flex items-center justify-center
-                      w-44 h-44
-                      sm:w-52 sm:h-52
-                      md:w-60 md:h-60
-                      lg:w-64 lg:h-64">
-            <img
-              alt="Logo do Anhangá"
-              class="deer-img object-contain
-                     w-[64%] h-[64%]
-                     sm:w-[68%] sm:h-[68%]
-                     md:w-[70%] md:h-[70%]"
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuAqopGSORSKiC2HXLsR1SGnSG_5HnbU0RAX5XmbrwGDrBhrM7Z3mfHuGOBjxkd0ll7k0vUUnufoDgVneJ3oqE7m9rcbZ8grNqQPMMM0y-S6K-kS2HnkLB1A3AQVvSNV955BIeeYJPrFcQUC0-haUcSSZJT8sGmLcTruvy1Gr785WyALUxRoqfpW2ajrSybRvjytI1U9he9qxbNXsh-HiaImNnxaMo6GQHzw7zsS9ffrWsNF3h7XbWqkeUt1HE2Dz_dnCdGBHCtVWi8"
-            />
-          </div>
-        </div>
+## 🧠 Arquitetura Atualizada
 
-        <!-- Título -->
-        <h1 class="title-glow font-headline font-extrabold uppercase tracking-tight text-tertiary
-                   text-[2.35rem] leading-none
-                   sm:text-5xl
-                   md:text-6xl">
-          ANHANGÁ
-        </h1>
+### Novos componentes
 
-        <p class="mt-3 font-headline font-medium tracking-[0.12em] text-primary/90
-                  text-base
-                  sm:text-lg
-                  md:text-xl">
-          Guardião da Floresta
-        </p>
+#### 📷 `monitoramento.html`
 
-        <div class="mt-8 w-full max-w-[320px] space-y-3 text-left">
-          <div>
-            <label class="mb-1 block font-label text-[11px] uppercase tracking-[0.2em] text-on-surface-variant">Usuário</label>
-            <input id="username" class="w-full rounded-xl border border-outline-variant bg-surface-container-low px-4 py-3 text-on-surface placeholder:text-on-surface-variant/60" placeholder="admin" value="admin" />
-          </div>
-          <div>
-            <label class="mb-1 block font-label text-[11px] uppercase tracking-[0.2em] text-on-surface-variant">Senha</label>
-            <input id="password" type="password" class="w-full rounded-xl border border-outline-variant bg-surface-container-low px-4 py-3 text-on-surface placeholder:text-on-surface-variant/60" placeholder="123456" value="123456" />
-          </div>
-          <p id="loginMessage" class="min-h-[18px] text-xs text-on-surface-variant"></p>
-        </div>
+* Tela de análise em tempo real
+* Webcam ativa automaticamente
+* Classificação contínua com IA
+* Feedback visual:
 
-        <!-- Botão -->
-        <button id="loginBtn" class="mt-5 sm:mt-6 w-full max-w-[250px] rounded-2xl px-8 py-4
-                       bg-[#C9A24A] text-[#0B2F25] font-headline font-bold uppercase
-                       tracking-[0.18em] text-base sm:text-lg
-                       transition-all duration-300
-                       hover:scale-[1.03] hover:shadow-glowStrong
-                       active:scale-95">
-          Entrar
-        </button>
-      </div>
+  * status dinâmico
+  * barra de confiança
+  * histórico de eventos
 
-      <!-- Rodapé -->
-      <div class="w-full flex flex-col items-center gap-5 pb-2 sm:pb-4">
-        <div class="w-full max-w-[220px] h-px bg-gradient-to-r from-transparent via-tertiary/40 to-transparent"></div>
+---
 
-        <div class="flex items-center gap-3 text-center">
-          <span class="material-symbols-outlined text-tertiary text-sm">sensors</span>
-          <span class="font-label text-[11px] sm:text-xs uppercase tracking-[0.30em] text-on-surface-variant font-semibold">
-            Inteligência Florestal
-          </span>
-        </div>
-      </div>
+## ⚙️ Dependências
 
-      <!-- infos laterais só no desktop -->
-      <div class="absolute top-8 left-8 hidden lg:block opacity-20">
-        <div class="font-label text-[10px] text-primary uppercase space-y-1 text-left">
-        </div>
-      </div>
-    </section>
+Atualize seu `requirements.txt`:
 
-    <!-- moldura sutil apenas em telas maiores -->
-    <div class="pointer-events-none fixed inset-0 z-50 hidden md:block border-[1.25rem] lg:border-[2rem] border-surface"></div>
-  </main>
+```txt
+requests
+python-dotenv
+scikit-learn
+numpy
+fastapi
+uvicorn
+tensorflow==2.21.0
+opencv-python
+pillow
+```
 
-  <script>
-    const API_BASE = localStorage.getItem("ANHANGA_API_BASE") || "http://127.0.0.1:8000";
-    const usernameInput = document.getElementById("username");
-    const passwordInput = document.getElementById("password");
-    const loginBtn = document.getElementById("loginBtn");
-    const loginMessage = document.getElementById("loginMessage");
+---
 
-    async function doLogin() {
-      const username = usernameInput.value.trim();
-      const password = passwordInput.value;
+## 📁 Estrutura adicional
 
-      if (!username || !password) {
-        loginMessage.textContent = "Informe usuário e senha.";
-        loginMessage.className = "min-h-[18px] text-xs text-error";
-        return;
-      }
+```bash
+/model/
+ └── keras_Model.h5   # modelo exportado do Teachable Machine
+```
 
-      loginBtn.disabled = true;
-      loginBtn.textContent = "Entrando...";
-      loginMessage.textContent = "";
+---
 
-      try {
-        const response = await fetch(`${API_BASE}/auth/login-test`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password })
-        });
+## ▶️ Execução
 
-        const payload = await response.json();
-        if (!response.ok) {
-          throw new Error(payload.detail || "Falha no login.");
-        }
+### 1. Instalar dependências
 
-        localStorage.setItem("ANHANGA_TOKEN", payload.token);
-        localStorage.setItem("ANHANGA_USER", JSON.stringify(payload.user || {}));
-        loginMessage.textContent = `Bem-vindo, ${(payload.user && payload.user.name) || username}!`;
-        loginMessage.className = "min-h-[18px] text-xs text-primary";
+```bash
+pip install -r requirements.txt
+```
 
-        setTimeout(() => {
-          window.location.href = "./mapa.html";
-        }, 400);
-      } catch (error) {
-        loginMessage.textContent = error.message || "Erro ao autenticar.";
-        loginMessage.className = "min-h-[18px] text-xs text-error";
-      } finally {
-        loginBtn.disabled = false;
-        loginBtn.textContent = "Entrar";
-      }
-    }
+---
 
-    loginBtn.addEventListener("click", doLogin);
-    passwordInput.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") {
-        doLogin();
-      }
-    });
-  </script>
-</body>
-</html>
+### 2. Rodar sistema completo
+
+```bash
+python app.py
+```
+
+O sistema irá:
+
+* ✔ iniciar backend
+* ✔ iniciar frontend
+* ✔ verificar IA (TensorFlow + modelo)
+
+---
+
+## 📷 Monitoramento em tempo real
+
+Acesse:
+
+```
+http://127.0.0.1:5500/monitoramento.html
+```
+
+Funcionalidades:
+
+* câmera ativada automaticamente
+* detecção contínua
+* status em tempo real:
+
+  * 📡 Conectando câmera...
+  * ❌ Câmera desconectada
+  * 🔥 Área queimada
+  * 🌱 Área preservada
+
+---
+
+## 🔗 Navegação do sistema
+
+* `mapa.html` → visualização geográfica
+* `insights.html` → indicadores
+* `monitoramento.html` → IA em tempo real 🎥
+
+---
+
+## 🧪 Fluxo atualizado
+
+1. usuário acessa o sistema
+2. navega entre mapa e insights
+3. acessa monitoramento ao vivo
+4. câmera captura imagem
+5. modelo IA classifica o terreno
+6. resultado é exibido instantaneamente
+
+---
+
+## ⚠️ Pontos de atenção
+
+* O modelo `.h5` deve estar em `/model/`
+* Navegador precisa permitir acesso à câmera
+* TensorFlow pode ser pesado em máquinas mais fracas
+* Classificação depende da qualidade do treinamento no Teachable Machine
+
+---
+
+## 📈 Próximos passos (evolução)
+
+* integração da IA com backend (API)
+* salvar histórico de detecções no banco
+* alertas automáticos (push/email)
+* deploy em nuvem
+* uso com câmeras reais (IoT)
+
+---
+
+## ✅ Conclusão
+
+O projeto evoluiu de um sistema de monitoramento passivo para uma plataforma **ativa com inteligência artificial**, capaz de analisar o ambiente em tempo real.
+
+👉 Agora você tem:
+
+* dados + visualização + IA + automação
+
+---

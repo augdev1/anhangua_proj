@@ -1,77 +1,79 @@
-"""Landsat-specific service layer for Anhangua project.
+import os
+import requests
+from dotenv import load_dotenv
 
-This module wraps gfw_alerts methods and provides helper utilities for
-frontend-ready data.
-"""
+load_dotenv()
 
-from datetime import date, timedelta
-from typing import Any, Dict, List, Optional
+BASE_URL = "https://data-api.globalforestwatch.org"
+DATASET = "umd_glad_landsat_alerts"
+TOKEN = (os.getenv("GFW_API_TOKEN") or os.getenv("API_TOKEN") or "").strip()
 
-import gfw_alerts
+headers = {"Content-Type": "application/json"}
+if TOKEN:
+    headers["Authorization"] = f"Bearer {TOKEN}"
+    headers["x-api-key"] = TOKEN
+
+# get latest version
+resp = requests.get(f"{BASE_URL}/dataset/{DATASET}", headers=headers, timeout=10)
+resp.raise_for_status()
+version = resp.json().get("data", {}).get("versions", [])[-1]
+
+# create a geostore for our crude Amazon polygon
+amazon_poly = {
+    "type": "Polygon",
+    "coordinates": [[
+        [-75.0, -15.0],
+        [-75.0, -5.0],
+        [-70.0, 0.0],
+        [-68.0, 5.0],
+        [-62.0, 7.0],
+        [-55.0, 5.0],
+        [-50.0, 0.0],
+        [-52.0, -10.0],
+        [-58.0, -12.0],
+        [-65.0, -14.0],
+        [-75.0, -15.0],
+    ]]
+}
+
+geo_resp = requests.post(f"{BASE_URL}/geostore/", headers=headers, json={"geometry": amazon_poly})
+geo_resp.raise_for_status()
+geostore_id = geo_resp.json().get("data", {}).get("gfw_geostore_id")
+
+# Use a safer query to avoid potential "SELECT *" issues with raster datasets.
+sql = (
+    "SELECT latitude, longitude, umd_glad_landsat_alerts__date AS alert_date, "
+    "umd_glad_landsat_alerts__confidence AS confidence "
+    "FROM data "
+    "LIMIT 1"
+)
+query_url = f"{BASE_URL}/dataset/{DATASET}/{version}/query/json"
+# The API may time out on large queries. Try using pagination params to limit work.
+params = {"geostore_id": geostore_id, "sql": sql, "page": 1, "page_size": 1}
+
+import sys
+
+for attempt in range(1, 4):
+    try:
+        resp = requests.get(query_url, headers=headers, params=params, timeout=90)
+        resp.raise_for_status()
+        break
+    except requests.exceptions.RequestException as e:
+        if hasattr(e, 'response') and e.response is not None:
+            msg = e.response.text or str(e)
+            print(f"Attempt {attempt} failed: {e.response.status_code} {msg}")
+        else:
+            print(f"Attempt {attempt} failed: {e}")
+        if attempt == 3:
+            print("Não foi possível consultar a API (erro interno no servidor). Use gfw_alerts.py para gerar KML.")
+            sys.exit(0)
+        print("Tentando novamente...")
 
 
-def get_landsat_alerts_amazon(
-    days: int = 14,
-    confidence: Optional[str] = None,
-    start_date: Optional[date] = None,
-    end_date: Optional[date] = None,
-) -> List[Dict[str, Any]]:
-    """Fetch and normalize Amazon GLAD-Landsat alerts for frontend use."""
+data = resp.json().get("data", [])
 
-    alerts = gfw_alerts.get_alerts_amazon(
-        gfw_alerts.TOKEN,
-        days=days,
-        confidence=confidence,
-        _no_cache=True,
-    )
-    if not alerts:
-        return []
-
-    def _parse_date_entry(dt_str):
-        try:
-            return date.fromisoformat(str(dt_str))
-        except Exception:
-            return None
-
-    filtered: List[Dict[str, Any]] = []
-    for a in alerts:
-        alert_date = _parse_date_entry(a.get("alert_date"))
-        if start_date and (alert_date is None or alert_date < start_date):
-            continue
-        if end_date and (alert_date is None or alert_date > end_date):
-            continue
-        filtered.append({
-            "latitude": a.get("latitude"),
-            "longitude": a.get("longitude"),
-            "alert_date": a.get("alert_date"),
-            "confidence": a.get("confidence"),
-            "source": a.get("source", "GLAD-Landsat"),
-            "alert_type": a.get("alert_type", "GLAD-S2"),
-        })
-
-    return filtered
-
-
-def get_landsat_alerts_tile(
-    lat: float,
-    lng: float,
-    z: int,
-    confidence: Optional[str] = None,
-) -> List[Dict[str, Any]]:
-    """Fetch alerts for a given tile (lat/lng/z)."""
-    return gfw_alerts.get_alerts_tile(lat, lng, z, token=gfw_alerts.TOKEN, confidence=confidence)
-
-
-def get_landsat_clusters(
-    days: int = 14,
-    confidence: Optional[str] = None,
-    eps_km: float = 1.0,
-    min_samples: int = 1,
-) -> List[Dict[str, Any]]:
-    """Fetch clusterized alerts for the Amazon basin."""
-    alerts = get_landsat_alerts_amazon(days=days, confidence=confidence)
-    if not alerts:
-        return []
-
-    clusters = gfw_alerts.cluster_alerts(alerts, eps_km=eps_km, min_samples=min_samples)
-    return clusters
+print("rows:", len(data))
+if data:
+    print("keys:", list(data[0].keys()))
+    import json
+    print(json.dumps(data[0], indent=2))

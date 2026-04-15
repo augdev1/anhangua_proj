@@ -1,0 +1,9 @@
+requests
+python-dotenv
+scikit-learn
+numpy
+fastapi
+uvicorn
+tensorflow==2.21.0
+opencv-python
+pillow

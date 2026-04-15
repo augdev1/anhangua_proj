@@ -1,314 +1,267 @@
-"""FastAPI server exposing alerts endpoints for frontend consumption.
+"""Service layer with helper functions to prepare alert data for frontend consumption.
 
-This server wraps the existing `gfw_alerts.py` logic and provides simple
-endpoints to fetch alerts and clustered alerts as JSON.
+This module keeps the backend logic (filtering, formatting, clustering) separate from
+FastAPI routing, ensuring the frontend can consume only ready-to-render data.
 """
 
+from datetime import date
+from typing import Any, Dict, Iterable, List, Optional
 import logging
-import os
-import json
-import time
-import secrets
 
-from datetime import date, datetime
-from fastapi import FastAPI, HTTPException, Query, Request, Header
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
-from typing import Any, Dict, List, Optional
-
-import alerts_service
 import firms_alerts
 import gfw_alerts
 import landsat_service
 
-# Setup basic logging to file (and console via uvicorn if running)
-LOG_DIR = "logs"
-LOG_FILE = os.path.join(LOG_DIR, "alerts_api.log")
-os.makedirs(LOG_DIR, exist_ok=True)
 
-logger = logging.getLogger("anhangua_api")
-logger.setLevel(logging.INFO)
-if not logger.handlers:
-    handler = logging.FileHandler(LOG_FILE, encoding="utf-8")
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-    logger.addHandler(handler)
+logger = logging.getLogger(__name__)
 
 
-def _standard_response(data: Any) -> Dict[str, Any]:
-    """Wrap response data in a consistent envelope."""
-    if isinstance(data, list):
-        count = len(data)
-    elif isinstance(data, dict) and "features" in data:
-        # GeoJSON format, leave untouched (FeatureCollection)
-        return data
-    else:
-        count = 1
-
-    return {"status": "ok", "count": count, "data": data}
-
-
-def _parse_date(value: Optional[str]) -> Optional[date]:
-    if not value:
-        return None
-    try:
-        return date.fromisoformat(value)
-    except Exception:
-        return None
-
-
-TEST_LOGIN_USERS = {
-    (os.getenv("TEST_LOGIN_USER") or "admin").strip().lower(): {
-        "password": (os.getenv("TEST_LOGIN_PASSWORD") or "123456"),
-        "name": (os.getenv("TEST_LOGIN_NAME") or "Usuário Demo"),
-    }
+CONFIDENCE_MAP = {
+    "low": 1,
+    "nominal": 2,
+    "medium": 3,
+    "high": 4,
 }
 
-_auth_tokens: Dict[str, Dict[str, str]] = {}
-
-# Simple in-memory rate-limiting by client IP + endpoint
-_rate_limits = {}
-RATE_LIMIT_WINDOW = 60  # seconds
-RATE_LIMIT_MAX = 120  # allow more requests from same client when testing/dev
+CONFIDENCE_LABELS = ["low", "nominal", "medium", "high"]
 
 
-def _check_rate_limit(request: Request, endpoint: str):
-    now = int(datetime.now().timestamp())
-    client_ip = request.client.host if request.client else "unknown"
-    # For local development, avoid strict throttling
-    if client_ip in ("127.0.0.1", "::1", "localhost"):
-        return True
-
-    key = f"{client_ip}:{endpoint}"
-
-    entry = _rate_limits.get(key, {"count": 0, "first_at": now})
-    if now - entry["first_at"] >= RATE_LIMIT_WINDOW:
-        entry = {"count": 1, "first_at": now}
-    else:
-        entry["count"] += 1
-
-    _rate_limits[key] = entry
-
-    if entry["count"] > RATE_LIMIT_MAX:
-        return False
-    return True
-
-
-app = FastAPI(
-    title="Anhangua GFW Alerts API",
-    description="Serves deforestation alert data fetched from Global Forest Watch.",
-    version="0.1.0",
-)
-
-# Allow frontend dev server to call the API
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"] if os.getenv("ALLOW_ALL_CORS", "true").lower() == "true" else ["http://localhost:3000", "http://127.0.0.1:3000"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-class Alert(BaseModel):
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
-    alert_date: Optional[str] = None
-    confidence: Optional[str] = None
-    source: Optional[str] = None
-    alert_type: Optional[str] = None
-    area_ha: Optional[float] = None
-
-
-class Cluster(BaseModel):
-    lat: float
-    lon: float
-    alert_count: int
-    latest_alert: Optional[str]
-
-
-class LoginPayload(BaseModel):
-    username: str
-    password: str
-
-
-def _extract_bearer_token(authorization: Optional[str]) -> Optional[str]:
-    if not authorization:
+def _confidence_score(value: Optional[str]) -> Optional[int]:
+    if value is None:
         return None
-    parts = authorization.strip().split(" ", 1)
-    if len(parts) != 2 or parts[0].lower() != "bearer":
-        return None
-    return parts[1].strip() or None
+    return CONFIDENCE_MAP.get(str(value).strip().lower())
 
 
-@app.post("/auth/login-test")
-def auth_login_test(payload: LoginPayload):
-    username = (payload.username or "").strip().lower()
-    password = payload.password or ""
+def _confidence_from_score(score: float) -> str:
+    """Convert a score (1-4) back to the nearest confidence label."""
+    if score is None:
+        return "unknown"
+    idx = int(round(score)) - 1
+    if idx < 0:
+        idx = 0
+    if idx >= len(CONFIDENCE_LABELS):
+        idx = len(CONFIDENCE_LABELS) - 1
+    return CONFIDENCE_LABELS[idx]
 
-    if not username or not password:
-        raise HTTPException(status_code=400, detail="username e password são obrigatórios")
 
-    user = TEST_LOGIN_USERS.get(username)
-    if not user or user.get("password") != password:
-        raise HTTPException(status_code=401, detail="Credenciais inválidas")
-
-    token = secrets.token_urlsafe(24)
-    profile = {"username": username, "name": user.get("name", username)}
-    _auth_tokens[token] = profile
-
-    logger.info("AUTH_LOGIN_TEST username=%s", username)
+def _normalize_alert(alert: Dict[str, Any]) -> Dict[str, Any]:
+    """Return only the fields the frontend needs for map rendering."""
     return {
-        "status": "ok",
-        "token": token,
-        "token_type": "bearer",
-        "user": profile,
+        "latitude": alert.get("latitude"),
+        "longitude": alert.get("longitude"),
+        "alert_date": alert.get("alert_date"),
+        "confidence": alert.get("confidence"),
+        "source": alert.get("source"),
     }
 
 
-@app.get("/auth/me")
-def auth_me(authorization: Optional[str] = Header(None)):
-    token = _extract_bearer_token(authorization)
-    if not token or token not in _auth_tokens:
-        raise HTTPException(status_code=401, detail="Token inválido ou ausente")
-    return {"status": "ok", "user": _auth_tokens[token]}
+def _filter_by_date_range(
+    alerts: Iterable[Dict[str, Any]],
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+) -> List[Dict[str, Any]]:
+    """Filter alerts by alert_date within [start_date, end_date]."""
+
+    if start_date is None and end_date is None:
+        start_date = date(date.today().year, 1, 1)
+
+    out: List[Dict[str, Any]] = []
+    for a in alerts:
+        d = gfw_alerts.parse_alert_date(a.get("alert_date"))
+        if d is None:
+            continue
+        if start_date and d < start_date:
+            continue
+        if end_date and d > end_date:
+            continue
+        out.append(a)
+    return out
 
 
-@app.post("/auth/logout")
-def auth_logout(authorization: Optional[str] = Header(None)):
-    token = _extract_bearer_token(authorization)
-    if token and token in _auth_tokens:
-        _auth_tokens.pop(token, None)
-    return {"status": "ok"}
+def _cluster_confidence(clusters: List[Dict[str, Any]], alerts: List[Dict[str, Any]]) -> None:
+    """Add a `confidence` field to each cluster based on its members."""
 
-
-@app.get("/alertas/tile", response_model=List[Alert])
-def alerts_tile(
-    lat: float = Query(..., description="Latitude of the tile"),
-    lng: float = Query(..., description="Longitude of the tile"),
-    z: int = Query(..., description="Zoom level"),
-    confidence: Optional[str] = Query(None, description="Filter by confidence (low/medium/high)"),
-):
-    """Fetch alerts from GFW Data API for a given map tile (lat/lng/z)."""
-    logger.info("GET /alerts/tile lat=%s lng=%s z=%s confidence=%s", lat, lng, z, confidence)
-
-    alerts = gfw_alerts.get_alerts_tile(lat, lng, z, confidence=confidence)
-    if alerts is None:
-        logger.error("/alerts/tile returned None")
-        raise HTTPException(status_code=502, detail="Erro ao consultar a API do GFW")
-
-    logger.info("/alerts/tile returned %d alerts", len(alerts))
-    return alerts
-
-
-@app.get("/alertas/amazonas", response_model=List[Alert])
-def alerts_amazon(
-    days: int = Query(14, ge=1, description="Últimos dias"),
-    confidence: Optional[str] = Query(None, description="Filter by confidence (low/medium/high)"),
-):
-    """Fetch recent alerts for the Amazon basin using GFW /query/json endpoint."""
-    logger.info("GET /alerts/amazon days=%s confidence=%s", days, confidence)
-
-    alerts = gfw_alerts.get_alerts_amazon(gfw_alerts.TOKEN, days=days, confidence=confidence)
-    if alerts is None:
-        logger.error("/alerts/amazon returned None")
-        raise HTTPException(status_code=502, detail="Erro ao consultar a API do GFW")
-
-    logger.info("/alerts/amazon returned %d alerts", len(alerts))
-    return alerts
-
-
-@app.get("/alertas/landsat")
-def alerts_landsat(
-    bbox: str = Query("-60.0,-3.0,-59.0,-2.0"),
-    date_str: Optional[str] = Query(None),
-    days: int = Query(14, ge=1),
-    limit: int = Query(500, ge=1, le=2000),
-):
-    logger.info("GET /alertas/landsat bbox=%s date=%s days=%s limit=%s",
-                bbox, date_str, days, limit)
-
-    start_date = None
-    end_date = None
-
-    if date_str:
-        try:
-            start_date = date.fromisoformat(date_str)
-            end_date = start_date
-        except Exception:
-            raise HTTPException(status_code=400, detail="date_str must be YYYY-MM-DD")
-
-    alerts = landsat_service.get_landsat_alerts_amazon(
-        days=days,
-        confidence=None,
-        start_date=start_date,
-        end_date=end_date
-    )
-
-    if alerts is None:
-        raise HTTPException(status_code=502, detail="Erro ao consultar Landsat")
-
-    # 🔥 FILTRO BBOX
-    try:
-        parts = [float(p) for p in bbox.split(",")]
-        if len(parts) == 4:
-            min_lon, min_lat, max_lon, max_lat = parts
-            alerts = [
-                a for a in alerts
-                if a.get("longitude") is not None
-                and a.get("latitude") is not None
-                and min_lon <= float(a["longitude"]) <= max_lon
-                and min_lat <= float(a["latitude"]) <= max_lat
-            ]
-    except Exception:
-        raise HTTPException(status_code=400, detail="bbox inválido")
-
-    # 🔥 CONVERTE PRA GEOJSON
-    features = []
-
-    for a in alerts[:limit]:
+    # Build index of points to confidence score.
+    point_to_conf = {}
+    for a in alerts:
         lat = a.get("latitude")
         lon = a.get("longitude")
+        score = _confidence_score(a.get("confidence"))
+        if lat is None or lon is None or score is None:
+            continue
+        point_to_conf[(lat, lon)] = score
 
+    for c in clusters:
+        # cluster is expected to have `lat`/`lon` and `alert_count`.
+        # We approximate confidence by averaging nearby points in the cluster.
+        # Since clustering is already done, we just approximate using nearest points.
+        lat = c.get("lat")
+        lon = c.get("lon")
         if lat is None or lon is None:
+            c["confidence"] = "unknown"
             continue
 
-        features.append({
-            "type": "Feature",
-            "geometry": {
-                "type": "Point",
-                "coordinates": [lon, lat]
-            },
-            "properties": {
-                "date": a.get("image_date"),
-                "resolution": a.get("resolution"),
-                "source": "landsat"
-            }
-        })
+        # Find points within 0.01 degrees (~1km) of cluster center.
+        scores = []
+        for (plat, plon), score in point_to_conf.items():
+            if abs(plat - lat) < 0.01 and abs(plon - lon) < 0.01:
+                scores.append(score)
 
-    geojson = {
-        "type": "FeatureCollection",
-        "features": features
+        if not scores:
+            c["confidence"] = "unknown"
+        else:
+            avg = sum(scores) / len(scores)
+            c["confidence"] = _confidence_from_score(avg)
+
+
+def get_map_alerts(
+    days: int = 14,
+    confidence: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    limit: int = 1000,
+) -> List[Dict[str, Any]]:
+    """Return alerts ready to be rendered on a map.
+
+    This function applies:
+    - query to GFW (/query/json)
+    - confidence filtering
+    - deduplication
+    - optional date filtering
+    - keeps only the fields needed for frontend rendering
+    """
+
+    result = get_map_alerts_with_stats(
+        days=days,
+        confidence=confidence,
+        start_date=start_date,
+        end_date=end_date,
+        limit=limit,
+    )
+    return result["alerts"]
+
+
+def get_map_alerts_with_stats(
+    days: int = 14,
+    confidence: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    limit: int = 1000,
+) -> Dict[str, Any]:
+    """Return normalized alerts plus metadata for logging/observability."""
+    combined_alerts: List[Dict[str, Any]] = []
+    source_counts_raw: Dict[str, int] = {"gfw": 0, "firms": 0, "landsat": 0}
+    source_errors: Dict[str, str] = {}
+
+    try:
+        gfw_items_raw = gfw_alerts.get_alerts_amazon(
+            gfw_alerts.TOKEN,
+            days=days,
+            confidence=confidence,
+            limit=limit,
+            _no_cache=True,
+        ) or []
+        gfw_items: List[Dict[str, Any]] = []
+        for item in gfw_items_raw:
+            alert = dict(item)
+            alert["source"] = "desmatamento-gfw"
+            gfw_items.append(alert)
+        source_counts_raw["gfw"] = len(gfw_items)
+        combined_alerts.extend(gfw_items)
+    except Exception as exc:
+        source_errors["gfw"] = str(exc)
+        logger.exception("Erro ao buscar alertas GFW")
+
+    try:
+        firms_items_raw = firms_alerts.fetch_firms_alerts_as_dict(days=days, limit=limit) or []
+        firms_items: List[Dict[str, Any]] = []
+        for item in firms_items_raw:
+            alert = dict(item)
+            alert["source"] = "queimadas-firms"
+            firms_items.append(alert)
+        source_counts_raw["firms"] = len(firms_items)
+        combined_alerts.extend(firms_items)
+    except Exception as exc:
+        source_errors["firms"] = str(exc)
+        logger.exception("Erro ao buscar alertas FIRMS")
+
+    try:
+        landsat_items_raw = landsat_service.get_landsat_alerts_amazon(
+            days=days,
+            confidence=confidence,
+            start_date=start_date,
+            end_date=end_date,
+        ) or []
+        landsat_items: List[Dict[str, Any]] = []
+        for item in landsat_items_raw:
+            alert = dict(item)
+            alert["source"] = "landsat"
+            landsat_items.append(alert)
+        source_counts_raw["landsat"] = len(landsat_items)
+        combined_alerts.extend(landsat_items)
+    except Exception as exc:
+        source_errors["landsat"] = str(exc)
+        logger.exception("Erro ao buscar alertas LANDSAT")
+
+    filtered_alerts = _filter_by_date_range(
+        combined_alerts,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    normalized_alerts = [_normalize_alert(a) for a in filtered_alerts]
+
+    source_counts_final: Dict[str, int] = {"gfw": 0, "firms": 0, "landsat": 0, "unknown": 0}
+    confidence_counts: Dict[str, int] = {}
+    for item in normalized_alerts:
+        src = str(item.get("source") or "").strip().lower()
+        if "firms" in src or "queimadas" in src:
+            source_key = "firms"
+        elif "gfw" in src or "desmatamento" in src or "glad" in src:
+            source_key = "gfw"
+        elif "landsat" in src:
+            source_key = "landsat"
+        else:
+            source_key = "unknown"
+        source_counts_final[source_key] = source_counts_final.get(source_key, 0) + 1
+
+        conf = str(item.get("confidence") or "unknown").strip().lower()
+        if not conf:
+            conf = "unknown"
+        confidence_counts[conf] = confidence_counts.get(conf, 0) + 1
+
+    return {
+        "alerts": normalized_alerts,
+        "source_counts_raw": source_counts_raw,
+        "source_counts_final": source_counts_final,
+        "confidence_counts": confidence_counts,
+        "source_errors": source_errors,
     }
 
-    logger.info("/alertas/landsat returned %d features", len(features))
 
-    return JSONResponse(content=geojson)
+def get_map_clusters(
+    days: int = 14,
+    confidence: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    eps_km: float = 1.0,
+    min_samples: int = 1,
+) -> List[Dict[str, Any]]:
+    """Return cluster data ready to be plotted on a map."""
 
-@app.get("/alertas/amazonas.geojson")
-def alerts_amazon_geojson(
-    days: int = Query(14, ge=1, description="Últimos dias"),
-    confidence: Optional[str] = Query(None, description="Filter by confidence (low/medium/high)"),
-):
-    """Fetch alerts for the Amazon basin and return as GeoJSON FeatureCollection."""
-    logger.info("GET /alerts/amazon.geojson days=%s confidence=%s", days, confidence)
+    alerts = get_map_alerts(days=days, confidence=confidence, start_date=start_date, end_date=end_date)
+    if not alerts:
+        return []
 
-    alerts = gfw_alerts.get_alerts_amazon(gfw_alerts.TOKEN, days=days, confidence=confidence)
-    if alerts is None:
-        logger.error("/alerts/amazon.geojson returned None")
-        raise HTTPException(status_code=502, detail="Erro ao consultar a API do GFW")
+    clusters = gfw_alerts.cluster_alerts(alerts, eps_km=eps_km, min_samples=min_samples)
+    # Add a confidence estimate per cluster.
+    _cluster_confidence(clusters, alerts)
 
-    features = []
+    return clusters
+
+
+def alerts_to_geojson(alerts: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Convert alerts to GeoJSON FeatureCollection."""
+    features: List[Dict[str, Any]] = []
     for a in alerts:
         lat = a.get("latitude")
         lon = a.get("longitude")
@@ -325,243 +278,4 @@ def alerts_amazon_geojson(
                 },
             }
         )
-
-    geojson = {"type": "FeatureCollection", "features": features}
-    logger.info("/alerts/amazon.geojson returned %d features", len(features))
-    return JSONResponse(content=geojson)
-
-
-@app.get("/alertas/mapa")
-def alerts_map(
-    request: Request,
-    days: int = Query(14, ge=1, description="Últimos dias"),
-    confidence: Optional[str] = Query(None, description="Filter by confidence (low/medium/high)"),
-    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
-    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
-    limit: int = Query(1000, ge=1, le=10000, description="Max number of alerts to return"),
-):
-    """Return alerts ready to be rendered on a map (GeoJSON-like format)."""
-    if not _check_rate_limit(request, "/alertas/mapa"):
-        raise HTTPException(status_code=429, detail="Rate limit exceeded")
-
-    logger.info(
-        "GET /alertas/mapa days=%s confidence=%s start_date=%s end_date=%s",
-        days,
-        confidence,
-        start_date,
-        end_date,
-    )
-
-    sd = _parse_date(start_date)
-    ed = _parse_date(end_date)
-
-    alerts = alerts_service.get_map_alerts(
-        days=days, confidence=confidence, start_date=sd, end_date=ed, limit=limit
-    )
-
-    geojson = alerts_service.alerts_to_geojson(alerts)
-    logger.info("/alertas/mapa returned %d features", len(geojson.get("features", [])))
-    return JSONResponse(content=_standard_response(geojson))
-
-
-@app.get("/alertas/unificado")
-def alerts_unified(
-    request: Request,
-    days: int = Query(14, ge=1, description="Últimos dias"),
-    confidence: Optional[str] = Query(None, description="Filter by confidence (low/medium/high)"),
-    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
-    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
-    limit: int = Query(1000, ge=1, le=10000, description="Max number of alerts to return"),
-):
-    """Retorna lista unificada de alertas (GFW, FIRMS, Landsat) sem formato GeoJSON."""
-    if not _check_rate_limit(request, "/alertas/unificado"):
-        raise HTTPException(status_code=429, detail="Rate limit exceeded")
-
-    started = time.perf_counter()
-    client_ip = request.client.host if request.client else "unknown"
-    logger.info(
-        "UNIFIED_REQUEST %s",
-        json.dumps(
-            {
-                "endpoint": "/alertas/unificado",
-                "client_ip": client_ip,
-                "days": days,
-                "confidence": confidence,
-                "start_date": start_date,
-                "end_date": end_date,
-                "limit": limit,
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-        ),
-    )
-
-    sd = _parse_date(start_date)
-    ed = _parse_date(end_date)
-
-    result = alerts_service.get_map_alerts_with_stats(
-        days=days, confidence=confidence, start_date=sd, end_date=ed, limit=limit
-    )
-    alerts = result.get("alerts", [])
-
-    elapsed_ms = round((time.perf_counter() - started) * 1000.0, 2)
-    logger.info(
-        "UNIFIED_SUMMARY %s",
-        json.dumps(
-            {
-                "endpoint": "/alertas/unificado",
-                "client_ip": client_ip,
-                "days": days,
-                "confidence": confidence,
-                "start_date": start_date,
-                "end_date": end_date,
-                "limit": limit,
-                "status": "ok",
-                "count_total": len(alerts),
-                "source_counts_raw": result.get("source_counts_raw", {}),
-                "source_counts_final": result.get("source_counts_final", {}),
-                "confidence_counts": result.get("confidence_counts", {}),
-                "source_errors": result.get("source_errors", {}),
-                "latency_ms": elapsed_ms,
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-        ),
-    )
-
-    # Snapshot dos dados para consumo offline via export de logs (feira/demo).
-    logger.info(
-        "UNIFIED_DATA %s",
-        json.dumps(
-            {
-                "endpoint": "/alertas/unificado",
-                "client_ip": client_ip,
-                "days": days,
-                "confidence": confidence,
-                "start_date": start_date,
-                "end_date": end_date,
-                "limit": limit,
-                "count_total": len(alerts),
-                "alerts": alerts,
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-        ),
-    )
-
-    return JSONResponse(content=_standard_response(alerts))
-
-
-@app.get("/alertas/firms")
-def alerts_firms(
-    request: Request,
-    days: int = Query(1, ge=1, le=30),
-    min_confidence: Optional[float] = Query(None, ge=0, le=100),
-    limit: int = Query(500, ge=1, le=2000),
-):
-    if not _check_rate_limit(request, "/alertas/firms"):
-        raise HTTPException(status_code=429, detail="Rate limit exceeded")
-
-    logger.info("GET /alertas/firms days=%s min_confidence=%s limit=%s",
-                days, min_confidence, limit)
-
-    geojson = firms_alerts.fetch_firms_alerts(
-        days=days,
-        min_confidence=min_confidence,
-        limit=limit
-    )
-
-    # 🔥 RETORNA DIRETO GEOJSON (PADRÃO)
-    return JSONResponse(content=geojson)
-
-
-@app.get("/alertas/mapa/clusters")
-def alerts_map_clusters(
-    days: int = Query(14, ge=1, description="Últimos dias"),
-    confidence: Optional[str] = Query(None, description="Filter by confidence (low/medium/high)"),
-    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
-    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
-    eps_km: float = Query(1.0, gt=0, description="Raio do cluster em km"),
-    min_samples: int = Query(1, ge=1, description="Mínimo de pontos por cluster"),
-):
-    """Return cluster data ready to render on a map."""
-    logger.info(
-        "GET /alerts/map/clusters days=%s confidence=%s start_date=%s end_date=%s eps_km=%s min_samples=%s",
-        days,
-        confidence,
-        start_date,
-        end_date,
-        eps_km,
-        min_samples,
-    )
-
-    sd = _parse_date(start_date)
-    ed = _parse_date(end_date)
-
-    clusters = alerts_service.get_map_clusters(
-        days=days,
-        confidence=confidence,
-        start_date=sd,
-        end_date=ed,
-        eps_km=eps_km,
-        min_samples=min_samples,
-    )
-    response = _standard_response(clusters)
-    logger.info("/alerts/map/clusters returned %d clusters", response.get("count"))
-    return JSONResponse(content=response)
-
-
-@app.get("/alertas/bbox", response_model=List[Alert])
-def alerts_bbox(
-    bbox: str = Query(..., description="Bounding box: minLon,minLat,maxLon,maxLat"),
-    days: int = Query(14, ge=1, description="Últimos dias"),
-    confidence: Optional[str] = Query(None, description="Filter by confidence (low/medium/high)"),
-):
-    """Fetch alerts for the Amazon basin and filter by a bounding box."""
-    logger.info("GET /alerts/bbox bbox=%s days=%s confidence=%s", bbox, days, confidence)
-
-    parts = bbox.split(",")
-    if len(parts) != 4:
-        raise HTTPException(status_code=400, detail="bbox must be minLon,minLat,maxLon,maxLat")
-
-    try:
-        min_lon, min_lat, max_lon, max_lat = [float(p) for p in parts]
-    except ValueError:
-        raise HTTPException(status_code=400, detail="bbox values must be floats")
-
-    alerts = gfw_alerts.get_alerts_amazon(gfw_alerts.TOKEN, days=days, confidence=confidence)
-    if alerts is None:
-        logger.error("/alerts/bbox returned None")
-        raise HTTPException(status_code=502, detail="Erro ao consultar a API do GFW")
-
-    filtered = gfw_alerts.filter_alerts_by_bbox(alerts, min_lon, min_lat, max_lon, max_lat)
-    logger.info("/alerts/bbox returned %d alerts", len(filtered))
-    return filtered
-
-
-@app.get("/alertas/amazonas/clusterizado", response_model=List[Cluster])
-def alerts_amazon_clustered(
-    days: int = Query(14, ge=1, description="Últimos dias"),
-    confidence: Optional[str] = Query(None, description="Filter by confidence (low/medium/high)"),
-    eps_km: float = Query(1.0, gt=0, description="Raio do cluster em km"),
-    min_samples: int = Query(1, ge=1, description="Mínimo de pontos por cluster"),
-):
-    """Fetch alerts for the Amazon and return them clusterizados."""
-    logger.info(
-        "GET /alerts/amazon/clustered days=%s confidence=%s eps_km=%s min_samples=%s",
-        days,
-        confidence,
-        eps_km,
-        min_samples,
-    )
-
-    alerts = gfw_alerts.get_alerts_amazon(
-        gfw_alerts.TOKEN, days=days, confidence=confidence
-    )
-    if alerts is None:
-        logger.error("/alerts/amazon/clustered returned None")
-        raise HTTPException(status_code=502, detail="Erro ao consultar a API do GFW")
-
-    clusters = gfw_alerts.cluster_alerts(alerts, eps_km=eps_km, min_samples=min_samples)
-    logger.info("/alerts/amazon/clustered returned %d clusters", len(clusters))
-    return clusters
+    return {"type": "FeatureCollection", "features": features}

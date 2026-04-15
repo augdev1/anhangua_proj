@@ -1,135 +1,103 @@
-import json
-from dataclasses import dataclass
-from typing import Dict, List
-
-from fastapi.testclient import TestClient
-
-from api import app
-
-
-@dataclass
-class EndpointCase:
-    name: str
-    path: str
-    params: Dict[str, object]
-    expected_statuses: List[int]
+import os
+import socket
+import subprocess
+import sys
+import time
+from pathlib import Path
 
 
-CASES = [
-    EndpointCase(
-        name="alertas_tile",
-        path="/alertas/tile",
-        params={"lat": -3.1, "lng": -60.0, "z": 8},
-        expected_statuses=[200, 502],
-    ),
-    EndpointCase(
-        name="alertas_amazonas",
-        path="/alertas/amazonas",
-        params={"days": 3},
-        expected_statuses=[200, 502],
-    ),
-    EndpointCase(
-        name="alertas_landsat",
-        path="/alertas/landsat",
-        params={"days": 3, "limit": 20},
-        expected_statuses=[200, 502],
-    ),
-    EndpointCase(
-        name="alertas_amazonas_geojson",
-        path="/alertas/amazonas.geojson",
-        params={"days": 3},
-        expected_statuses=[200, 502],
-    ),
-    EndpointCase(
-        name="alertas_mapa",
-        path="/alertas/mapa",
-        params={"days": 3, "limit": 50},
-        expected_statuses=[200],
-    ),
-    EndpointCase(
-        name="alertas_unificado",
-        path="/alertas/unificado",
-        params={"days": 3, "limit": 50},
-        expected_statuses=[200],
-    ),
-    EndpointCase(
-        name="alertas_firms",
-        path="/alertas/firms",
-        params={"days": 1, "limit": 50},
-        expected_statuses=[200],
-    ),
-    EndpointCase(
-        name="alertas_mapa_clusters",
-        path="/alertas/mapa/clusters",
-        params={"days": 3, "eps_km": 1.0, "min_samples": 1},
-        expected_statuses=[200],
-    ),
-    EndpointCase(
-        name="alertas_bbox",
-        path="/alertas/bbox",
-        params={"bbox": "-62,-5,-58,-1", "days": 3},
-        expected_statuses=[200, 502],
-    ),
-    EndpointCase(
-        name="alertas_amazonas_clusterizado",
-        path="/alertas/amazonas/clusterizado",
-        params={"days": 3, "eps_km": 1.0, "min_samples": 1},
-        expected_statuses=[200, 502],
-    ),
-]
+PROJECT_ROOT = Path(__file__).resolve().parent
+BACKEND_HOST = "127.0.0.1"
+BACKEND_PORT = 8000
+FRONTEND_HOST = "127.0.0.1"
+FRONTEND_PORT = 5500
 
 
-def run_checks() -> int:
-    client = TestClient(app)
-    total = len(CASES)
-    ok_count = 0
-    unexpected_count = 0
+def _wait_for_port(host: str, port: int, timeout: float = 20.0) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(1)
+            if sock.connect_ex((host, port)) == 0:
+                return True
+        time.sleep(0.25)
+    return False
 
-    print("\n=== Verificação de Endpoints ===")
 
-    for case in CASES:
-        response = client.get(case.path, params=case.params)
-        status = response.status_code
+def _start_process(cmd: list[str], cwd: Path) -> subprocess.Popen:
+    create_flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if os.name == "nt" else 0
+    return subprocess.Popen(
+        cmd,
+        cwd=str(cwd),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=create_flags,
+    )
 
-        if status in case.expected_statuses:
-            ok_count += 1
-            result = "OK"
-        else:
-            unexpected_count += 1
-            result = "FALHA"
 
-        preview = ""
-        try:
-            body = response.json()
-            if isinstance(body, dict):
-                if "detail" in body:
-                    preview = f"detail={body['detail']}"
-                elif "count" in body:
-                    preview = f"count={body['count']}"
-                elif "features" in body:
-                    preview = f"features={len(body.get('features', []))}"
-            elif isinstance(body, list):
-                preview = f"itens={len(body)}"
-        except Exception:
-            preview = response.text[:120].replace("\n", " ")
+def main() -> int:
+    print("Iniciando Anhangá...\n")
 
-        print(
-            f"[{result}] {case.name:30s} {case.path:30s} status={status} "
-            f"esperado={case.expected_statuses} {preview}"
-        )
+    backend_cmd = [
+        sys.executable,
+        "-m",
+        "uvicorn",
+        "api:app",
+        "--host",
+        BACKEND_HOST,
+        "--port",
+        str(BACKEND_PORT),
+        "--reload",
+    ]
 
-    print("\n--- Resumo ---")
-    print(f"Total: {total}")
-    print(f"OK: {ok_count}")
-    print(f"Falhas inesperadas: {unexpected_count}")
+    frontend_cmd = [
+        sys.executable,
+        "-m",
+        "http.server",
+        str(FRONTEND_PORT),
+        "--bind",
+        FRONTEND_HOST,
+    ]
 
-    if unexpected_count:
-        print("\nResultado final: FALHOU")
+    backend_proc = _start_process(backend_cmd, PROJECT_ROOT)
+    frontend_proc = _start_process(frontend_cmd, PROJECT_ROOT)
+
+    backend_ok = _wait_for_port(BACKEND_HOST, BACKEND_PORT)
+    frontend_ok = _wait_for_port(FRONTEND_HOST, FRONTEND_PORT)
+
+    if not backend_ok or not frontend_ok:
+        print("Falha ao iniciar serviços. Verifique dependências e portas em uso.")
+        for proc in (backend_proc, frontend_proc):
+            if proc.poll() is None:
+                proc.terminate()
         return 1
 
-    print("\nResultado final: SUCESSO")
+    app_url = f"http://{FRONTEND_HOST}:{FRONTEND_PORT}/index.html"
+
+    print(f"Backend ativo em: http://{BACKEND_HOST}:{BACKEND_PORT}")
+    print(f"Frontend: {app_url}")
+    print("Login de teste padrão: admin / 123456")
+
+    print("\nServiços em execução. Pressione Ctrl+C para encerrar.")
+
+    try:
+        while True:
+            if backend_proc.poll() is not None:
+                print("Backend encerrou inesperadamente.")
+                break
+            if frontend_proc.poll() is not None:
+                print("Servidor frontend encerrou inesperadamente.")
+                break
+            time.sleep(1)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        for proc in (backend_proc, frontend_proc):
+            if proc.poll() is None:
+                proc.terminate()
+
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(run_checks())
+    raise SystemExit(main())
